@@ -18,7 +18,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 
 import { applyAdaptation, buildAdaptationSummary, resetAdaptation } from "@/shared/adaptation";
-import { asErrorMessage, injectContentScriptIfNeeded, queryActiveTab, sendToActiveTab } from "@/shared/chrome";
+import { asErrorMessage, injectContentScriptIfNeeded, queryActiveTab, sendRuntimeMessage, sendToActiveTab } from "@/shared/chrome";
 import { buildAnalysisReport, inspectPage } from "@/shared/pageInsights";
 import { formatTaskTime } from "@/shared/metrics";
 import {
@@ -26,16 +26,19 @@ import {
   PERSONA_LABELS,
   PERSONA_OPTIONS,
   type AnalysisReport,
+  type AiSettings,
   type ExtensionSettings,
+  type PageSummary,
   type PageInsights,
   type PersonaId
 } from "@/shared/types";
-import { loadSettings, saveSettings } from "@/shared/storage";
+import { DEFAULT_AI_SETTINGS } from "@/shared/types";
+import { loadAiSettings, loadSettings, saveAiSettings, saveSettings } from "@/shared/storage";
 import { cx, Pill, ProgressBar, SectionTitle, SoftCard } from "@/shared/ui";
 
-import type { NeuroAdaptStateMessage } from "@/shared/messaging";
+import type { AiAnalysisMessage, NeuroAdaptStateMessage } from "@/shared/messaging";
 
-type BusyAction = "analyze" | "adapt" | "reset" | null;
+type BusyAction = "analyze" | "adapt" | "reset" | "testGemini" | null;
 
 function statusToneClass(kind: "info" | "success" | "warning" | "error"): string {
   switch (kind) {
@@ -55,6 +58,56 @@ function formatPersonaLabel(persona: PersonaId, detectedPersona?: PersonaId): st
   return PERSONA_LABELS[persona];
 }
 
+function createGeminiSmokeTestSummary(): PageSummary {
+  return {
+    title: "NeuroAdapt Gemini Smoke Test",
+    url: "chrome-extension://neuroadapt/smoke-test",
+    language: "en",
+    description: "Synthetic page summary used to verify Gemini integration.",
+    metadata: {},
+    headings: [{ level: 1, text: "Patient appointment portal" }],
+    navigation: [{ label: "Home", role: "link", tag: "a", smallTarget: false }],
+    links: [{ label: "Insurance help", role: "link", tag: "a", smallTarget: true }],
+    buttons: [
+      { label: "Schedule appointment", role: "button", tag: "button", smallTarget: false },
+      { label: "Submit form", role: "button", tag: "button", smallTarget: false }
+    ],
+    forms: [
+      {
+        label: "Appointment request",
+        fields: [
+          { label: "Patient name", role: "textbox", tag: "input", type: "text", smallTarget: false },
+          { label: "Date of birth", role: "textbox", tag: "input", type: "date", smallTarget: false }
+        ],
+        buttons: [{ label: "Continue", role: "button", tag: "button", smallTarget: false }]
+      }
+    ],
+    tables: [],
+    textBlocks: [
+      {
+        text: "Users must choose a clinic, fill out several required fields, and continue to confirmation.",
+        fontSize: 14,
+        contrastRatio: 3.8
+      }
+    ],
+    interactiveElements: [
+      { label: "Schedule appointment", role: "button", tag: "button", smallTarget: false },
+      { label: "Continue", role: "button", tag: "button", smallTarget: false },
+      { label: "Insurance help", role: "link", tag: "a", smallTarget: true }
+    ],
+    stats: {
+      interactiveCount: 3,
+      smallTargetCount: 1,
+      navCount: 1,
+      formCount: 1,
+      textBlockCount: 1,
+      averageFontSize: 14,
+      lowContrastCount: 1,
+      bodyTextLength: 220
+    }
+  };
+}
+
 export function PopupApp(): JSX.Element {
   const [settings, setSettings] = useState<ExtensionSettings>(DEFAULT_SETTINGS);
   const [analysis, setAnalysis] = useState<AnalysisReport | null>(null);
@@ -64,12 +117,17 @@ export function PopupApp(): JSX.Element {
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [panelOpen, setPanelOpen] = useState(true);
   const [localPreview, setLocalPreview] = useState<AnalysisReport | null>(null);
+  const [aiSettings, setAiSettings] = useState<AiSettings>(DEFAULT_AI_SETTINGS);
 
   useEffect(() => {
     let mounted = true;
     loadSettings().then((next) => {
       if (!mounted) return;
       setSettings(next);
+    });
+    loadAiSettings().then((next) => {
+      if (!mounted) return;
+      setAiSettings(next);
     });
     return () => {
       mounted = false;
@@ -92,6 +150,43 @@ export function PopupApp(): JSX.Element {
     setStatusMessage(`Persona set to ${formatPersonaLabel(next.persona, insights?.detectedPersona)}`);
     setStatusTone(tone);
     await saveSettings(next);
+  }
+
+  async function persistAiSettings(next: AiSettings): Promise<void> {
+    setAiSettings(next);
+    await saveAiSettings(next);
+    setStatusMessage(next.geminiApiKey ? "Gemini API key saved locally for extension requests." : "Gemini API key cleared.");
+    setStatusTone(next.geminiApiKey ? "success" : "warning");
+  }
+
+  async function testGeminiConnection(): Promise<void> {
+    setBusyAction("testGemini");
+    setStatusMessage("Testing Gemini with the saved API key...");
+    setStatusTone("info");
+
+    try {
+      await saveAiSettings(aiSettings);
+      const response = await sendRuntimeMessage<AiAnalysisMessage>({
+        type: "NA_RUN_GEMINI_ANALYSIS",
+        payload: {
+          summary: createGeminiSmokeTestSummary(),
+          preferredPersona: "firstTime",
+          question: "Return a short accessibility analysis for this smoke test."
+        }
+      });
+
+      if (!response?.ok || !response.analysis) {
+        throw new Error(response?.error || "No Gemini response returned.");
+      }
+
+      setStatusMessage(`Gemini working. Persona: ${PERSONA_LABELS[response.analysis.persona]}, score: ${response.analysis.score}/100.`);
+      setStatusTone("success");
+    } catch (error) {
+      setStatusMessage(`Gemini test failed: ${asErrorMessage(error)}`);
+      setStatusTone("error");
+    } finally {
+      setBusyAction(null);
+    }
   }
 
   async function analyzeCurrentPage(): Promise<void> {
@@ -343,8 +438,69 @@ export function PopupApp(): JSX.Element {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 14 }}
               transition={{ duration: 0.28 }}
-              className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden"
+              className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1"
             >
+              <SoftCard className="space-y-3">
+                <SectionTitle
+                  title="Gemini API Key"
+                  subtitle="Paste your key here. It is stored in Chrome local storage, not hardcoded into the app."
+                />
+
+                <label className="grid gap-2 text-xs font-bold text-slate-700">
+                  API key
+                  <input
+                    type="password"
+                    value={aiSettings.geminiApiKey}
+                    onChange={(event) => setAiSettings({ ...aiSettings, geminiApiKey: event.currentTarget.value })}
+                    placeholder="AIza..."
+                    className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-cyan-300 focus:ring-2 focus:ring-cyan-200"
+                    autoComplete="off"
+                  />
+                </label>
+
+                <label className="grid gap-2 text-xs font-bold text-slate-700">
+                  Gemini model
+                  <input
+                    type="text"
+                    value={aiSettings.model}
+                    onChange={(event) => setAiSettings({ ...aiSettings, model: event.currentTarget.value })}
+                    className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-cyan-300 focus:ring-2 focus:ring-cyan-200"
+                  />
+                </label>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => persistAiSettings(aiSettings)}
+                    disabled={busyAction !== null}
+                    className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-xs font-extrabold text-emerald-900 transition hover:bg-emerald-100"
+                  >
+                    Save key
+                  </button>
+                  <button
+                    type="button"
+                    onClick={testGeminiConnection}
+                    disabled={busyAction !== null}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-cyan-200 bg-cyan-50 px-3 py-3 text-xs font-extrabold text-cyan-900 transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {busyAction === "testGemini" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                    Test
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => persistAiSettings({ ...aiSettings, geminiApiKey: "" })}
+                    disabled={busyAction !== null}
+                    className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-xs font-extrabold text-slate-900 transition hover:bg-sky-50"
+                  >
+                    Clear
+                  </button>
+                </div>
+
+                <p className="text-xs font-semibold leading-5 text-slate-600">
+                  Production note: for public release, point the AI service layer at your backend and keep Gemini keys server-side.
+                </p>
+              </SoftCard>
+
               <SoftCard className="space-y-4">
                 <div className="flex items-center justify-between">
                     <SectionTitle title="Adaptation Controls" subtitle="Enable, analyze, apply, and compare in one place." />

@@ -1,6 +1,7 @@
 import {
   PERSONA_LABELS,
   type AnalysisReport,
+  type AiAnalysisResult,
   type ExtensionSettings,
   type MetricsSnapshot,
   type NavigationComplexity,
@@ -221,17 +222,19 @@ function adaptationList(persona: PersonaId): string[] {
   }
 }
 
-export function buildAnalysisReport(settings: ExtensionSettings, insights: PageInsights): AnalysisReport {
+export function buildAnalysisReport(settings: ExtensionSettings, insights: PageInsights, ai?: AiAnalysisResult): AnalysisReport {
   const persona = settings.persona === "auto" ? insights.detectedPersona : settings.persona;
   const metrics = buildMetrics(insights, settings);
+  const aiPersona = ai?.persona && ai.persona !== "auto" ? ai.persona : persona;
 
   return {
-    detectedPersona: persona,
-    detectedPersonaLabel: PERSONA_LABELS[persona],
-    observedChallenges: challengeList(insights, persona),
-    adaptationsApplied: adaptationList(persona),
+    detectedPersona: aiPersona,
+    detectedPersonaLabel: PERSONA_LABELS[aiPersona],
+    observedChallenges: ai?.issues.map((item) => item.description).slice(0, 4) ?? challengeList(insights, persona),
+    adaptationsApplied: ai?.recommendations.map((item) => item.description).slice(0, 4) ?? adaptationList(persona),
     before: metrics.before,
-    after: metrics.after
+    after: metrics.after,
+    ai
   };
 }
 

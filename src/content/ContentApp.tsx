@@ -15,8 +15,10 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import { applyAdaptation, resetAdaptation } from "@/shared/adaptation";
+import { sendRuntimeMessage } from "@/shared/chrome";
 import { HeuristicObserver } from "@/shared/heuristics";
 import { buildAnalysisReport, inspectPage } from "@/shared/pageInsights";
+import { extractPageSummary } from "@/shared/pageSummary";
 import { formatTaskTime, progressValue } from "@/shared/metrics";
 import {
   DEFAULT_SETTINGS,
@@ -30,6 +32,7 @@ import { loadSettings, saveSettings, subscribeToSettings } from "@/shared/storag
 import { cx, Pill, ProgressBar, SectionTitle } from "@/shared/ui";
 
 import type { NeuroAdaptMessage, NeuroAdaptStateMessage } from "@/shared/messaging";
+import type { AiAnalysisMessage } from "@/shared/messaging";
 
 function feedLines(report: AnalysisReport, insights: PageInsights): string[] {
   const persona = report.detectedPersona;
@@ -54,6 +57,11 @@ function feedLines(report: AnalysisReport, insights: PageInsights): string[] {
     lines.splice(2, 0, "Increasing target size and spacing...");
   }
 
+  if (report.ai?.source === "gemini") {
+    lines.splice(1, 0, report.ai.cached ? "Using cached Gemini accessibility reasoning." : "Gemini accessibility reasoning complete.");
+    if (report.ai.summary) lines.splice(2, 0, report.ai.summary);
+  }
+
   return lines;
 }
 
@@ -68,6 +76,11 @@ function complexityValue(label: AnalysisReport["before"]["navigationComplexity"]
   if (label === "High") return 82;
   if (label === "Medium") return 54;
   return 28;
+}
+
+function settingsForReport(settings: ExtensionSettings, report: AnalysisReport): ExtensionSettings {
+  if (settings.persona !== "auto") return settings;
+  return { ...settings, persona: report.detectedPersona };
 }
 
 export function ContentApp(): JSX.Element {
@@ -196,61 +209,65 @@ export function ContentApp(): JSX.Element {
       }
 
       if (message.type === "NA_ANALYZE_PAGE") {
-        const nextInsights = inspectPage(document);
-        const nextAnalysis = buildAnalysisReport(settingsRef.current, nextInsights);
-        const nextFeed = feedLines(nextAnalysis, nextInsights);
-        const previewSettings: ExtensionSettings = {
-          ...settingsRef.current,
-          enabled: true,
-          comparisonMode: "adapted"
-        };
-        const nextRuntime: RuntimeStatus = {
-          state: "analyzing",
-          messages: nextFeed,
-          lastUpdated: Date.now()
-        };
+        (async () => {
+          const nextInsights = inspectPage(document);
+          const nextAnalysis = await runGeminiAnalysis(settingsRef.current);
+          const nextFeed = feedLines(nextAnalysis, nextInsights);
+          const previewSettings: ExtensionSettings = {
+            ...settingsRef.current,
+            enabled: true,
+            comparisonMode: "adapted"
+          };
+          const nextRuntime: RuntimeStatus = {
+            state: "analyzing",
+            messages: nextFeed,
+            lastUpdated: Date.now()
+          };
 
-        setInsights(nextInsights);
-        setAnalysis(nextAnalysis);
-        setMessages(nextFeed);
-        setRuntime(nextRuntime);
-        setVisible(true);
-        applyAdaptation(document, previewSettings, nextInsights);
-        sendResponse({ settings: settingsRef.current, insights: nextInsights, analysis: nextAnalysis, runtime: nextRuntime } satisfies NeuroAdaptStateMessage);
-        return false;
+          setInsights(nextInsights);
+          setAnalysis(nextAnalysis);
+          setMessages(nextFeed);
+          setRuntime(nextRuntime);
+          setVisible(true);
+          applyAdaptation(document, settingsForReport(previewSettings, nextAnalysis), nextInsights);
+          sendResponse({ settings: settingsRef.current, insights: nextInsights, analysis: nextAnalysis, runtime: nextRuntime } satisfies NeuroAdaptStateMessage);
+        })();
+        return true;
       }
 
       if (message.type === "NA_ADAPT_PAGE") {
-        const nextSettings: ExtensionSettings = {
-          ...settingsRef.current,
-          enabled: true,
-          persona: message.payload?.persona ?? settingsRef.current.persona,
-          comparisonMode: "adapted",
-          autoDetect: true
-        };
+        (async () => {
+          const nextSettings: ExtensionSettings = {
+            ...settingsRef.current,
+            enabled: true,
+            persona: message.payload?.persona ?? settingsRef.current.persona,
+            comparisonMode: "adapted",
+            autoDetect: true
+          };
 
-        const nextInsights = inspectPage(document);
-        const nextAnalysis = buildAnalysisReport(nextSettings, nextInsights);
-        const nextFeed = feedLines(nextAnalysis, nextInsights);
-        const nextRuntime: RuntimeStatus = {
-          state: "done",
-          messages: nextFeed,
-          lastUpdated: Date.now()
-        };
+          const nextInsights = inspectPage(document);
+          const nextAnalysis = await runGeminiAnalysis(nextSettings);
+          const nextFeed = feedLines(nextAnalysis, nextInsights);
+          const nextRuntime: RuntimeStatus = {
+            state: "done",
+            messages: nextFeed,
+            lastUpdated: Date.now()
+          };
 
-        settingsRef.current = nextSettings;
-        setSettings(nextSettings);
-        setComparison("adapted");
-        setInsights(nextInsights);
-        setAnalysis(nextAnalysis);
-        setMessages(nextFeed);
-        setRuntime(nextRuntime);
-        setVisible(true);
-        saveSettings(nextSettings).catch(() => undefined);
-        applyAdaptation(document, nextSettings, nextInsights);
+          settingsRef.current = nextSettings;
+          setSettings(nextSettings);
+          setComparison("adapted");
+          setInsights(nextInsights);
+          setAnalysis(nextAnalysis);
+          setMessages(nextFeed);
+          setRuntime(nextRuntime);
+          setVisible(true);
+          saveSettings(nextSettings).catch(() => undefined);
+          applyAdaptation(document, settingsForReport(nextSettings, nextAnalysis), nextInsights);
 
-        sendResponse({ settings: nextSettings, insights: nextInsights, analysis: nextAnalysis, runtime: nextRuntime } satisfies NeuroAdaptStateMessage);
-        return false;
+          sendResponse({ settings: nextSettings, insights: nextInsights, analysis: nextAnalysis, runtime: nextRuntime } satisfies NeuroAdaptStateMessage);
+        })();
+        return true;
       }
 
       if (message.type === "NA_RESET_PAGE") {
@@ -322,10 +339,31 @@ export function ContentApp(): JSX.Element {
     await saveSettings(next);
   }
 
+  async function runGeminiAnalysis(nextSettings: ExtensionSettings, question?: string): Promise<AnalysisReport> {
+    const nextInsights = inspectPage(document);
+    const heuristicReport = buildAnalysisReport(nextSettings, nextInsights);
+    const response = await sendRuntimeMessage<AiAnalysisMessage>({
+      type: "NA_RUN_GEMINI_ANALYSIS",
+      payload: {
+        summary: extractPageSummary(document),
+        preferredPersona: nextSettings.persona,
+        question
+      }
+    });
+
+    if (!response?.ok || !response.analysis) {
+      const message = response?.error ? `Gemini unavailable: ${response.error}` : "Gemini unavailable. Using local heuristic analysis.";
+      setMessages((current) => [message, ...current].slice(0, 5));
+      return heuristicReport;
+    }
+
+    return buildAnalysisReport(nextSettings, nextInsights, response.analysis);
+  }
+
   async function analyzePage(): Promise<void> {
     setBusy("analyze");
     const nextInsights = inspectPage(document);
-    const nextAnalysis = buildAnalysisReport(settingsRef.current, nextInsights);
+    const nextAnalysis = await runGeminiAnalysis(settingsRef.current);
     const nextFeed = feedLines(nextAnalysis, nextInsights);
     setInsights(nextInsights);
     setAnalysis(nextAnalysis);
@@ -349,7 +387,7 @@ export function ContentApp(): JSX.Element {
     await persistSettings(nextSettings);
 
     const nextInsights = inspectPage(document);
-    const nextAnalysis = buildAnalysisReport(nextSettings, nextInsights);
+    const nextAnalysis = await runGeminiAnalysis(nextSettings);
     const nextFeed = feedLines(nextAnalysis, nextInsights);
     setInsights(nextInsights);
     setAnalysis(nextAnalysis);
@@ -360,7 +398,7 @@ export function ContentApp(): JSX.Element {
       lastUpdated: Date.now()
     });
     setVisible(true);
-    applyAdaptation(document, nextSettings, nextInsights);
+    applyAdaptation(document, settingsForReport(nextSettings, nextAnalysis), nextInsights);
     setBusy(null);
   }
 
@@ -537,6 +575,11 @@ export function ContentApp(): JSX.Element {
                   <p className="na-text na-muted" style={{ marginTop: 8 }}>
                     <strong>Page:</strong> {insights.title}
                   </p>
+                  {analysis.ai ? (
+                    <p className="na-text na-muted" style={{ marginTop: 8 }}>
+                      <strong>Gemini score:</strong> {analysis.ai.score}/100
+                    </p>
+                  ) : null}
 
                   <div className="na-grid" style={{ marginTop: 12 }}>
                     <div>
@@ -565,6 +608,24 @@ export function ContentApp(): JSX.Element {
                       </div>
                     </div>
                   </div>
+
+                  {analysis.ai?.guidance.length ? (
+                    <div style={{ marginTop: 12 }}>
+                      <div className="na-label" style={{ marginBottom: 8 }}>
+                        AI Guidance
+                      </div>
+                      <div className="na-feed">
+                        {analysis.ai.guidance.slice(0, 3).map((item) => (
+                          <div key={item.title} className="na-feed-item">
+                            <span className="na-dot" />
+                            <span>
+                              <strong>{item.title}:</strong> {item.body}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="na-section">

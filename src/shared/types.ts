@@ -62,6 +62,92 @@ export interface ExtensionSettings {
   autoDetect: boolean;
 }
 
+export interface AiSettings {
+  geminiApiKey: string;
+  model: string;
+}
+
+export interface ExtractedElement {
+  label: string;
+  role: string;
+  tag: string;
+  href?: string;
+  type?: string;
+  fontSize?: number;
+  contrastRatio?: number;
+  smallTarget?: boolean;
+}
+
+export interface PageSummary {
+  title: string;
+  url: string;
+  language: string;
+  description: string;
+  metadata: Record<string, string>;
+  headings: Array<{ level: number; text: string }>;
+  navigation: ExtractedElement[];
+  links: ExtractedElement[];
+  buttons: ExtractedElement[];
+  forms: Array<{
+    label: string;
+    fields: ExtractedElement[];
+    buttons: ExtractedElement[];
+  }>;
+  tables: Array<{ caption: string; columns: string[]; rows: number }>;
+  textBlocks: Array<{ text: string; fontSize: number; contrastRatio?: number }>;
+  interactiveElements: ExtractedElement[];
+  stats: {
+    interactiveCount: number;
+    smallTargetCount: number;
+    navCount: number;
+    formCount: number;
+    textBlockCount: number;
+    averageFontSize: number;
+    lowContrastCount: number;
+    bodyTextLength: number;
+  };
+}
+
+export interface AiIssue {
+  severity: "low" | "medium" | "high";
+  category: string;
+  description: string;
+  evidence?: string;
+}
+
+export interface AiRecommendation {
+  id: string;
+  type:
+    | "font-scale"
+    | "spacing"
+    | "contrast"
+    | "highlight-buttons"
+    | "simplify-layout"
+    | "guidance-markers"
+    | "focus-indicators";
+  priority: "low" | "medium" | "high";
+  description: string;
+  selectorHint?: string;
+}
+
+export interface AiGuidanceItem {
+  title: string;
+  body: string;
+  steps?: string[];
+}
+
+export interface AiAnalysisResult {
+  source: "gemini" | "heuristic";
+  persona: PersonaId;
+  score: number;
+  issues: AiIssue[];
+  recommendations: AiRecommendation[];
+  guidance: AiGuidanceItem[];
+  summary: string;
+  cached?: boolean;
+  generatedAt: number;
+}
+
 export interface PageInsights {
   title: string;
   url: string;
@@ -91,6 +177,7 @@ export interface AnalysisReport {
   adaptationsApplied: string[];
   before: MetricsSnapshot;
   after: MetricsSnapshot;
+  ai?: AiAnalysisResult;
 }
 
 export interface RuntimeStatus {
@@ -104,6 +191,11 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   persona: "auto",
   comparisonMode: "adapted",
   autoDetect: true
+};
+
+export const DEFAULT_AI_SETTINGS: AiSettings = {
+  geminiApiKey: "",
+  model: "gemini-1.5-flash"
 };
 
 export const PERSONA_LABELS: Record<PersonaId, string> = {
