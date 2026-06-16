@@ -1,0 +1,39 @@
+{
+    "manifest_version": 3,
+    "name": "NeuroAdapt AI",
+    "version": "0.1.0",
+    "description": "Technology that adapts to you.",
+    "icons": {
+        "16": "public/logo.svg",
+        "48": "public/logo.svg",
+        "128": "public/logo.svg"
+    },
+    "action": {
+        "default_title": "NeuroAdapt AI",
+        "default_popup": "popup.html"
+    },
+    "background": {
+        "service_worker": "background.js",
+        "type": "module"
+    },
+    "permissions": [
+        "storage",
+        "activeTab",
+        "scripting",
+        "tabs"
+    ],
+    "host_permissions": [
+        "<all_urls>"
+    ],
+    "content_scripts": [
+        {
+            "matches": [
+                "<all_urls>"
+            ],
+            "js": [
+                "contentScript.js"
+            ],
+            "run_at": "document_idle"
+        }
+    ]
+}

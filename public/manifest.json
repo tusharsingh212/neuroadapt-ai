@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "NeuroAdapt AI",
+  "version": "0.1.0",
+  "description": "An intelligent accessibility layer that adapts websites in real time.",
+  "action": {
+    "default_title": "NeuroAdapt AI",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": ["storage", "tabs", "activeTab", "scripting"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["contentScript.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "logo.svg",
+    "48": "logo.svg",
+    "128": "logo.svg"
+  }
+}
