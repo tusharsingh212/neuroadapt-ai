@@ -339,5 +339,261 @@ export const contentStyles = `
     .na-launcher {
       transition: none;
     }
+
+    [data-neuroadapt-guided="true"] {
+      animation: none !important;
+    }
+
+    .na-typing-dot {
+      animation: none !important;
+    }
+  }
+
+  .na-chat-section {
+    padding-bottom: 12px;
+  }
+
+  .na-chat-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #a5f3fc;
+  }
+
+  .na-chat-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .na-guide-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    min-height: 36px;
+    font-size: 11px;
+    background: rgba(16, 185, 129, 0.12);
+    box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.25);
+  }
+
+  .na-guide-btn.na-guide-active {
+    background: rgba(16, 185, 129, 0.28);
+    color: #ecfdf5;
+  }
+
+  .na-chat-body {
+    overflow: hidden;
+  }
+
+  .na-walkthrough-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding: 8px 12px;
+    border-radius: 14px;
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    font-size: 11px;
+    line-height: 1.5;
+    color: #a7f3d0;
+  }
+
+  .na-chat-messages {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 220px;
+    overflow-y: auto;
+    margin-bottom: 10px;
+    padding-right: 4px;
+  }
+
+  .na-chat-messages::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .na-chat-messages::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.24);
+    border-radius: 999px;
+  }
+
+  .na-chat-bubble {
+    max-width: 92%;
+    padding: 10px 12px;
+    border-radius: 16px;
+    font-size: 12px;
+    line-height: 1.65;
+    word-wrap: break-word;
+  }
+
+  .na-chat-user {
+    align-self: flex-end;
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(16, 185, 129, 0.2));
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    color: #f0fdfa;
+  }
+
+  .na-chat-assistant {
+    align-self: flex-start;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #e2e8f0;
+  }
+
+  .na-typing {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 14px 16px;
+    width: fit-content;
+  }
+
+  .na-typing-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: #67e8f9;
+    animation: na-typing-bounce 1.2s ease-in-out infinite;
+  }
+
+  .na-typing-dot:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+
+  .na-typing-dot:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+
+  @keyframes na-typing-bounce {
+    0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
+    30% { transform: translateY(-4px); opacity: 1; }
+  }
+
+  .na-chat-input-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+  }
+
+  .na-chat-input {
+    flex: 1;
+    resize: none;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 14px;
+    padding: 10px 12px;
+    background: rgba(2, 6, 23, 0.55);
+    color: #f8fafc;
+    font: inherit;
+    font-size: 12px;
+    line-height: 1.5;
+    min-height: 44px;
+  }
+
+  .na-chat-input:focus-visible {
+    outline: 3px solid rgba(56, 189, 248, 0.7);
+    outline-offset: 2px;
+  }
+
+  .na-chat-input::placeholder {
+    color: rgba(148, 163, 184, 0.75);
+  }
+
+  .na-send-btn {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+  }
+
+  .na-checklist {
+    margin-bottom: 10px;
+    padding: 10px 12px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .na-checklist-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+
+  .na-checklist-items {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 6px;
+  }
+
+  .na-checklist-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 11px;
+    line-height: 1.5;
+    color: rgba(148, 163, 184, 0.9);
+  }
+
+  .na-checklist-item.na-checklist-active {
+    color: #ecfdf5;
+    font-weight: 600;
+  }
+
+  .na-checklist-done {
+    color: #34d399;
+  }
+
+  .na-checklist-completed span {
+    text-decoration: line-through;
+    opacity: 0.65;
+  }
+
+  .na-checklist-icon {
+    flex: none;
+    margin-top: 2px;
+  }
+
+  .na-form-hints {
+    margin-top: 10px;
+    display: grid;
+    gap: 8px;
+  }
+
+  .na-form-hint {
+    padding: 8px 10px;
+    border-radius: 12px;
+    background: rgba(16, 185, 129, 0.08);
+    border: 1px solid rgba(16, 185, 129, 0.15);
+    font-size: 11px;
+    line-height: 1.55;
+  }
+
+  .na-form-hint strong {
+    display: inline;
+    margin-right: 6px;
+  }
+
+  .na-required {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: rgba(251, 113, 133, 0.18);
+    color: #fecdd3;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    vertical-align: middle;
+  }
+
+  .na-first-time-banner {
+    border-color: rgba(16, 185, 129, 0.2);
+    background: rgba(16, 185, 129, 0.06);
   }
 `;

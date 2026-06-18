@@ -18,6 +18,7 @@ export default defineConfig({
         index: path.resolve(__dirname, "index.html"),
         popup: path.resolve(__dirname, "popup.html"),
         demo: path.resolve(__dirname, "demo.html"),
+        aadhaarDemo: path.resolve(__dirname, "aadhaar-demo.html"),
         background: path.resolve(__dirname, "src/background/index.ts")
       },
       output: {
