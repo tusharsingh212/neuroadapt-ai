@@ -136,6 +136,41 @@ export interface AiGuidanceItem {
   steps?: string[];
 }
 
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: number;
+  checklist?: ChecklistItem[];
+  formFields?: FormFieldGuide[];
+}
+
+export interface ChecklistItem {
+  id: string;
+  label: string;
+  status: "pending" | "active" | "completed";
+}
+
+export interface FormFieldGuide {
+  elementRef: string;
+  label: string;
+  explanation: string;
+  required: boolean;
+  expectedFormat?: string;
+}
+
+export interface TaskAssistantResult {
+  reply: string;
+  highlightElementRef?: string;
+  highlightTooltip?: string;
+  checklist: ChecklistItem[];
+  formFields: FormFieldGuide[];
+  walkthroughStep?: string;
+  source: "gemini" | "heuristic";
+  generatedAt: number;
+  cached?: boolean;
+}
+
 export interface AiAnalysisResult {
   source: "gemini" | "heuristic";
   persona: PersonaId;

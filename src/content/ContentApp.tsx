@@ -34,6 +34,8 @@ import { cx, Pill, ProgressBar, SectionTitle } from "@/shared/ui";
 import type { NeuroAdaptMessage, NeuroAdaptStateMessage } from "@/shared/messaging";
 import type { AiAnalysisMessage } from "@/shared/messaging";
 
+import { TaskAssistantPanel } from "@/content/TaskAssistantPanel";
+
 function feedLines(report: AnalysisReport, insights: PageInsights): string[] {
   const persona = report.detectedPersona;
   const lines = [
@@ -488,6 +490,9 @@ export function ContentApp(): JSX.Element {
     return () => heuristics.stop();
   }, []);
 
+  const resolvedPersona = settings.persona === "auto" ? insights.detectedPersona : settings.persona;
+  const isFirstTimeMode = resolvedPersona === "firstTime";
+
   const metricRows = [
     {
       label: "Readability",
@@ -543,6 +548,24 @@ export function ContentApp(): JSX.Element {
               </div>
 
               <div className="na-body">
+                <TaskAssistantPanel
+                  settings={settings}
+                  persona={resolvedPersona}
+                  onStatus={(message) => setMessages((current) => [message, ...current].slice(0, 5))}
+                />
+
+                {isFirstTimeMode ? (
+                  <div className="na-section na-first-time-banner">
+                    <div className="na-section-head">
+                      <SectionTitle title="First-Time Guide Mode" subtitle="Step-by-step AI guidance is active for this page." />
+                      <Pill className="text-[10px] border-emerald-400/20 bg-emerald-400/10 text-emerald-100">Live guide</Pill>
+                    </div>
+                    <p className="na-text na-muted">
+                      Use the Task Assistant above to ask questions in plain language. I'll highlight what to click and walk you through forms.
+                    </p>
+                  </div>
+                ) : null}
+
                 <div className="na-section">
                   <div className="na-section-head">
                     <SectionTitle title="Floating AI Assistant" subtitle="Live messages from the adaptive engine." />

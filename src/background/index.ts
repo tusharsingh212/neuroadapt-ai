@@ -1,10 +1,12 @@
 import { DEFAULT_SETTINGS } from "@/shared/types";
 import { analyzeWithGemini } from "@/shared/gemini";
+import { analyzeTaskWithGemini } from "@/shared/taskAssistant";
 import { loadAiSettings, loadSettings, saveAiSettings, saveSettings } from "@/shared/storage";
-import type { AiAnalysisMessage, NeuroAdaptMessage } from "@/shared/messaging";
-import type { AiAnalysisResult } from "@/shared/types";
+import type { AiAnalysisMessage, NeuroAdaptMessage, TaskAssistantMessage } from "@/shared/messaging";
+import type { AiAnalysisResult, TaskAssistantResult } from "@/shared/types";
 
 const analysisCache = new Map<string, AiAnalysisResult>();
+const taskAssistantCache = new Map<string, TaskAssistantResult>();
 let lastGeminiRequestAt = 0;
 
 function cacheKey(message: Extract<NeuroAdaptMessage, { type: "NA_RUN_GEMINI_ANALYSIS" }>): string {
@@ -16,6 +18,19 @@ function cacheKey(message: Extract<NeuroAdaptMessage, { type: "NA_RUN_GEMINI_ANA
     question: question ?? "",
     stats: summary.stats,
     headings: summary.headings.slice(0, 10)
+  });
+}
+
+function taskCacheKey(message: Extract<NeuroAdaptMessage, { type: "NA_RUN_TASK_ASSISTANT" }>): string {
+  const { context, question, walkthroughMode, walkthroughStepIndex } = message.payload;
+  const historyLen = message.payload.conversationHistory?.length ?? 0;
+  return JSON.stringify({
+    url: context.summary.url,
+    question,
+    walkthroughMode,
+    walkthroughStepIndex,
+    historyLen,
+    stats: context.summary.stats
   });
 }
 
@@ -105,6 +120,38 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       } catch (error) {
         const messageText = error instanceof Error ? error.message : "Gemini analysis failed.";
         sendResponse({ ok: false, error: messageText } satisfies AiAnalysisMessage);
+      }
+    })();
+    return true;
+  }
+
+  if (message.type === "NA_RUN_TASK_ASSISTANT") {
+    (async () => {
+      try {
+        const key = taskCacheKey(message);
+        const cached = taskAssistantCache.get(key);
+        if (cached && Date.now() - cached.generatedAt < 2 * 60 * 1000) {
+          sendResponse({ ok: true, result: { ...cached, cached: true } } satisfies TaskAssistantMessage);
+          return;
+        }
+
+        await throttleGemini();
+        const aiSettings = await loadAiSettings();
+        const result = await analyzeTaskWithGemini({
+          apiKey: aiSettings.geminiApiKey,
+          model: aiSettings.model,
+          context: message.payload.context,
+          question: message.payload.question,
+          conversationHistory: message.payload.conversationHistory,
+          walkthroughMode: message.payload.walkthroughMode,
+          walkthroughStepIndex: message.payload.walkthroughStepIndex
+        });
+
+        taskAssistantCache.set(key, result);
+        sendResponse({ ok: true, result } satisfies TaskAssistantMessage);
+      } catch (error) {
+        const messageText = error instanceof Error ? error.message : "Task assistant failed.";
+        sendResponse({ ok: false, error: messageText } satisfies TaskAssistantMessage);
       }
     })();
     return true;
