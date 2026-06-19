@@ -36,13 +36,15 @@ function systemPrompt(): string {
     "Use plain, beginner-friendly language suitable for first-time internet users.",
     "Return strict JSON only. No markdown.",
     "JSON shape:",
-    '{"reply":"","highlightElementRef":"na-el-0 or null","highlightTooltip":"","checklist":[{"id":"","label":"","status":"pending|active|completed"}],"formFields":[{"elementRef":"","label":"","explanation":"","required":true,"expectedFormat":""}],"walkthroughStep":""}',
+    '{"reply":"","highlightElementRef":"na-el-0 or null","highlightTooltip":"","checklist":[{"id":"","label":"","status":"pending|active|completed"}],"formFields":[{"elementRef":"","label":"","explanation":"","required":true,"expectedFormat":""}],"walkthroughStep":"","customCss":"","domActions":[{"action":"move|hide|style|addClass|changeText","elementRef":"","targetRef":"","position":"before|after|inside-start|inside-end","cssStyles":{},"classes":[],"text":""}]}',
     "reply: clear conversational answer grounded in the current page.",
     "highlightElementRef: ref of the ONE element the user should interact with next, or omit if none.",
     "highlightTooltip: short tooltip like 'Click here to continue.'",
     "checklist: ordered task steps with status. Mark completed steps when user progress suggests it.",
     "formFields: explain visible form fields in plain language when relevant.",
-    "walkthroughStep: when in walkthrough mode, the single current instruction only."
+    "walkthroughStep: when in walkthrough mode, the single current instruction only.",
+    "customCss: string containing raw CSS to inject into the page to improve layout.",
+    "domActions: specific reversible actions to restructure the DOM (e.g. moving elements to be more visible, hiding clutter, adding classes or styles)."
   ].join("\n");
 }
 

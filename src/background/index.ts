@@ -9,6 +9,9 @@ const analysisCache = new Map<string, AiAnalysisResult>();
 const taskAssistantCache = new Map<string, TaskAssistantResult>();
 let lastGeminiRequestAt = 0;
 
+// PLACE YOUR GEMINI API KEY HERE
+const BACKEND_GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
+
 function cacheKey(message: Extract<NeuroAdaptMessage, { type: "NA_RUN_GEMINI_ANALYSIS" }>): string {
   const { summary, preferredPersona, question } = message.payload;
   return JSON.stringify({
@@ -108,7 +111,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         await throttleGemini();
         const aiSettings = await loadAiSettings();
         const analysis = await analyzeWithGemini({
-          apiKey: aiSettings.geminiApiKey,
+          apiKey: BACKEND_GEMINI_API_KEY || aiSettings.geminiApiKey,
           model: aiSettings.model,
           summary: message.payload.summary,
           preferredPersona: message.payload.preferredPersona,
@@ -138,7 +141,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         await throttleGemini();
         const aiSettings = await loadAiSettings();
         const result = await analyzeTaskWithGemini({
-          apiKey: aiSettings.geminiApiKey,
+          apiKey: BACKEND_GEMINI_API_KEY || aiSettings.geminiApiKey,
           model: aiSettings.model,
           context: message.payload.context,
           question: message.payload.question,
@@ -160,6 +163,28 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "NA_GET_SETTINGS") {
     (async () => {
       sendResponse(await loadSettings());
+    })();
+    return true;
+  }
+
+  if (message.type === "NA_VERIFY_BACKEND_KEY") {
+    (async () => {
+      const aiSettings = await loadAiSettings();
+      const apiKeyToUse = BACKEND_GEMINI_API_KEY || aiSettings.geminiApiKey;
+      if (!apiKeyToUse || !apiKeyToUse.trim() || apiKeyToUse === "YOUR_API_KEY_HERE") {
+        sendResponse({ ok: false, error: "Backend API key is empty. Please set it in src/background/index.ts or .env." });
+        return;
+      }
+      try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKeyToUse)}`);
+        if (response.ok) {
+          sendResponse({ ok: true });
+        } else {
+          sendResponse({ ok: false, error: `Invalid API Key (HTTP ${response.status})` });
+        }
+      } catch (e) {
+        sendResponse({ ok: false, error: "Network error during verification." });
+      }
     })();
     return true;
   }

@@ -1,4 +1,4 @@
-import type { ChecklistItem, FormFieldGuide, TaskAssistantResult } from "@/shared/types";
+import type { ChecklistItem, FormFieldGuide, TaskAssistantResult, DomAction } from "@/shared/types";
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -42,6 +42,25 @@ function formField(value: unknown): FormFieldGuide | null {
   };
 }
 
+function domAction(value: unknown): DomAction | null {
+  const record = asRecord(value);
+  const action = asString(record.action);
+  const elementRef = asString(record.elementRef);
+  
+  if (!action || !elementRef) return null;
+  if (!["move", "hide", "style", "addClass", "changeText"].includes(action)) return null;
+
+  return {
+    action: action as DomAction["action"],
+    elementRef,
+    targetRef: asString(record.targetRef) || undefined,
+    position: ["before", "after", "inside-start", "inside-end"].includes(record.position as string) ? record.position as DomAction["position"] : undefined,
+    cssStyles: record.cssStyles ? asRecord(record.cssStyles) as Record<string, string> : undefined,
+    classes: record.classes ? asArray(record.classes).map(c => asString(c)) : undefined,
+    text: asString(record.text) || undefined
+  };
+}
+
 export function parseTaskAssistantJson(text: string): unknown {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const candidate = fenced?.[1] ?? text;
@@ -64,6 +83,8 @@ export function validateTaskAssistantResult(value: unknown): Omit<TaskAssistantR
     highlightTooltip: asString(record.highlightTooltip) || undefined,
     checklist: asArray(record.checklist).map(checklistItem).filter((item) => item.label).slice(0, 8),
     formFields: asArray(record.formFields).map(formField).filter((item): item is FormFieldGuide => Boolean(item)).slice(0, 12),
-    walkthroughStep: asString(record.walkthroughStep) || undefined
+    walkthroughStep: asString(record.walkthroughStep) || undefined,
+    customCss: asString(record.customCss) || undefined,
+    domActions: asArray(record.domActions).map(domAction).filter((item): item is DomAction => Boolean(item))
   };
 }

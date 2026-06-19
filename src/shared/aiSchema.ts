@@ -1,4 +1,7 @@
-import type { AiAnalysisResult, AiGuidanceItem, AiIssue, AiRecommendation, PersonaId } from "@/shared/types";
+import type { AiAnalysisResult, AiGuidanceItem, AiIssue, AiRecommendation, DomAction, PersonaId } from "@/shared/types";
+
+const DOM_ACTION_TYPES = ["move", "hide", "style", "addClass", "changeText"];
+const DOM_POSITIONS = ["before", "after", "inside-start", "inside-end"];
 
 const PERSONAS: PersonaId[] = ["elderly", "visuallyImpaired", "firstTime", "patient", "auto"];
 const RECOMMENDATION_TYPES: AiRecommendation["type"][] = [
@@ -83,9 +86,29 @@ export function parseGeminiJson(text: string): unknown {
   return JSON.parse(candidate.slice(start, end + 1));
 }
 
+function parseDomAction(value: unknown): DomAction | null {
+  const record = asRecord(value);
+  const action = asString(record.action);
+  const elementRef = asString(record.elementRef);
+  if (!action || !elementRef || !DOM_ACTION_TYPES.includes(action)) return null;
+  return {
+    action: action as DomAction["action"],
+    elementRef,
+    targetRef: asString(record.targetRef) || undefined,
+    position: DOM_POSITIONS.includes(record.position as string) ? (record.position as DomAction["position"]) : undefined,
+    cssStyles: record.cssStyles ? (asRecord(record.cssStyles) as Record<string, string>) : undefined,
+    classes: record.classes ? asArray(record.classes).map((c) => asString(c)).filter(Boolean) : undefined,
+    text: asString(record.text) || undefined
+  };
+}
+
 export function validateAiAnalysis(value: unknown): Omit<AiAnalysisResult, "source" | "generatedAt" | "cached"> {
   const record = asRecord(value);
   const score = Math.round(Math.min(100, Math.max(0, asNumber(record.score, 70))));
+  const rawCss = asString(record.customCss);
+  const domActions = asArray(record.domActions)
+    .map(parseDomAction)
+    .filter((item): item is DomAction => Boolean(item));
 
   return {
     persona: persona(record.persona),
@@ -93,6 +116,8 @@ export function validateAiAnalysis(value: unknown): Omit<AiAnalysisResult, "sour
     issues: asArray(record.issues).map(issue).filter((item) => item.description).slice(0, 8),
     recommendations: asArray(record.recommendations).map(recommendation).filter((item) => item.description).slice(0, 8),
     guidance: asArray(record.guidance).map(guidance).filter((item) => item.title || item.body).slice(0, 5),
-    summary: asString(record.summary, "Accessibility analysis completed.")
+    summary: asString(record.summary, "Accessibility analysis completed."),
+    customCss: rawCss || undefined,
+    domActions: domActions.length > 0 ? domActions : undefined
   };
 }

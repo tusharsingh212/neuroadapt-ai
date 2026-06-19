@@ -117,7 +117,10 @@ export function PopupApp(): JSX.Element {
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [panelOpen, setPanelOpen] = useState(true);
   const [localPreview, setLocalPreview] = useState<AnalysisReport | null>(null);
-  const [aiSettings, setAiSettings] = useState<AiSettings>(DEFAULT_AI_SETTINGS);
+  const [backendStatus, setBackendStatus] = useState<"unknown" | "ok" | "error">("unknown");
+  const [apiKey, setApiKey] = useState("");
+  const [apiKeySaved, setApiKeySaved] = useState(false);
+
 
   useEffect(() => {
     let mounted = true;
@@ -125,14 +128,25 @@ export function PopupApp(): JSX.Element {
       if (!mounted) return;
       setSettings(next);
     });
-    loadAiSettings().then((next) => {
+    loadAiSettings().then((ai) => {
       if (!mounted) return;
-      setAiSettings(next);
+      // show masked key if already saved
+      if (ai.geminiApiKey) setApiKey("••••••••");
     });
     return () => {
       mounted = false;
     };
   }, []);
+
+  async function saveApiKey(): Promise<void> {
+    if (!apiKey || apiKey === "••••••••") return;
+    await saveAiSettings({ ...DEFAULT_AI_SETTINGS, geminiApiKey: apiKey.trim() });
+    setApiKey("••••••••");
+    setApiKeySaved(true);
+    setStatusMessage("API key saved.");
+    setStatusTone("success");
+    setTimeout(() => setApiKeySaved(false), 2500);
+  }
 
   useEffect(() => {
     saveSettings(settings).catch(() => undefined);
@@ -152,38 +166,27 @@ export function PopupApp(): JSX.Element {
     await saveSettings(next);
   }
 
-  async function persistAiSettings(next: AiSettings): Promise<void> {
-    setAiSettings(next);
-    await saveAiSettings(next);
-    setStatusMessage(next.geminiApiKey ? "Gemini API key saved locally for extension requests." : "Gemini API key cleared.");
-    setStatusTone(next.geminiApiKey ? "success" : "warning");
-  }
-
-  async function testGeminiConnection(): Promise<void> {
+  async function checkBackendConnection(): Promise<void> {
     setBusyAction("testGemini");
-    setStatusMessage("Testing Gemini with the saved API key...");
+    setStatusMessage("Verifying backend Gemini connection...");
     setStatusTone("info");
 
     try {
-      await saveAiSettings(aiSettings);
-      const response = await sendRuntimeMessage<AiAnalysisMessage>({
-        type: "NA_RUN_GEMINI_ANALYSIS",
-        payload: {
-          summary: createGeminiSmokeTestSummary(),
-          preferredPersona: "firstTime",
-          question: "Return a short accessibility analysis for this smoke test."
-        }
+      const response = await sendRuntimeMessage<{ ok: boolean; error?: string }>({
+        type: "NA_VERIFY_BACKEND_KEY"
       });
 
-      if (!response?.ok || !response.analysis) {
-        throw new Error(response?.error || "No Gemini response returned.");
+      if (!response?.ok) {
+        throw new Error(response?.error || "No response returned.");
       }
 
-      setStatusMessage(`Gemini working. Persona: ${PERSONA_LABELS[response.analysis.persona]}, score: ${response.analysis.score}/100.`);
+      setStatusMessage("Backend connection verified.");
       setStatusTone("success");
+      setBackendStatus("ok");
     } catch (error) {
-      setStatusMessage(`Gemini test failed: ${asErrorMessage(error)}`);
+      setStatusMessage(`Backend connection failed: ${asErrorMessage(error)}`);
       setStatusTone("error");
+      setBackendStatus("error");
     } finally {
       setBusyAction(null);
     }
@@ -443,315 +446,105 @@ export function PopupApp(): JSX.Element {
               <SoftCard className="space-y-3">
                 <SectionTitle
                   title="Gemini API Key"
-                  subtitle="Paste your key here. It is stored in Chrome local storage, not hardcoded into the app."
+                  subtitle="Paste your key once — it's stored locally in Chrome."
                 />
-
-                <label className="grid gap-2 text-xs font-bold text-slate-700">
-                  API key
+                <div className="flex items-center gap-2">
                   <input
                     type="password"
-                    value={aiSettings.geminiApiKey}
-                    onChange={(event) => setAiSettings({ ...aiSettings, geminiApiKey: event.currentTarget.value })}
+                    value={apiKey}
+                    onChange={(e) => { setApiKey(e.currentTarget.value); setApiKeySaved(false); }}
+                    onFocus={(e) => { if (apiKey === "••••••••") { setApiKey(""); } }}
                     placeholder="AIza..."
-                    className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-cyan-300 focus:ring-2 focus:ring-cyan-200"
-                    autoComplete="off"
+                    className="flex-1 rounded-xl border border-sky-200 bg-white px-3 py-2 text-xs font-mono text-slate-800 outline-none focus:ring-2 focus:ring-cyan-400/60"
                   />
-                </label>
-
-                <label className="grid gap-2 text-xs font-bold text-slate-700">
-                  Gemini model
-                  <input
-                    type="text"
-                    value={aiSettings.model}
-                    onChange={(event) => setAiSettings({ ...aiSettings, model: event.currentTarget.value })}
-                    className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-cyan-300 focus:ring-2 focus:ring-cyan-200"
-                  />
-                </label>
-
-                <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
-                    onClick={() => persistAiSettings(aiSettings)}
-                    disabled={busyAction !== null}
-                    className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-xs font-extrabold text-emerald-900 transition hover:bg-emerald-100"
+                    onClick={saveApiKey}
+                    disabled={!apiKey || apiKey === "••••••••"}
+                    className="inline-flex items-center gap-1 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-50"
                   >
-                    Save key
+                    {apiKeySaved ? "Saved ✓" : "Save"}
                   </button>
+                </div>
+
+                <div className="flex items-center gap-4 pt-1">
+                  <div className="flex-1">
+                    <p className="text-xs font-semibold text-slate-700">
+                      Connection:{" "}
+                      {backendStatus === "unknown" ? <span className="text-slate-400">Not verified</span> : backendStatus === "ok" ? <span className="text-emerald-600 font-bold">Connected ✓</span> : <span className="text-rose-600 font-bold">Error ✗</span>}
+                    </p>
+                  </div>
                   <button
                     type="button"
-                    onClick={testGeminiConnection}
+                    onClick={checkBackendConnection}
                     disabled={busyAction !== null}
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-cyan-200 bg-cyan-50 px-3 py-3 text-xs font-extrabold text-cyan-900 transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-70"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs font-extrabold text-cyan-900 transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-70"
                   >
                     {busyAction === "testGemini" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                    Test
+                    Verify
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => persistAiSettings({ ...aiSettings, geminiApiKey: "" })}
-                    disabled={busyAction !== null}
-                    className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-xs font-extrabold text-slate-900 transition hover:bg-sky-50"
-                  >
-                    Clear
-                  </button>
-                </div>
-
-                <p className="text-xs font-semibold leading-5 text-slate-600">
-                  Production note: for public release, point the AI service layer at your backend and keep Gemini keys server-side.
-                </p>
-              </SoftCard>
-
-              <SoftCard className="space-y-4">
-                <div className="flex items-center justify-between">
-                    <SectionTitle title="Adaptation Controls" subtitle="Enable, analyze, apply, and compare in one place." />
-                  <label className="inline-flex items-center gap-2 text-xs font-bold text-slate-700">
-                    <span>Toggle</span>
-                    <button
-                      type="button"
-                      onClick={() => toggleEnabled(!settings.enabled)}
-                      className={cx(
-                        "relative h-7 w-12 rounded-full border transition focus:outline-none focus:ring-2 focus:ring-cyan-400/60",
-                        settings.enabled
-                          ? "border-emerald-300 bg-emerald-100"
-                          : "border-slate-200 bg-white"
-                      )}
-                    >
-                      <span
-                        className={cx(
-                          "absolute top-1 h-5 w-5 rounded-full bg-white shadow transition",
-                          settings.enabled ? "left-6" : "left-1"
-                        )}
-                      />
-                    </button>
-                  </label>
-                </div>
-
-                <div className="grid gap-2">
-                  {PERSONA_OPTIONS.map((persona) => {
-                    const active = settings.persona === persona.id;
-                    return (
-                      <button
-                        key={persona.id}
-                        type="button"
-                        onClick={() => persistSettings({ ...settings, persona: persona.id }, "info")}
-                        className={cx(
-                          "group rounded-2xl border px-3 py-2 text-left transition focus:outline-none focus:ring-2 focus:ring-cyan-400/60",
-                          active
-                            ? "border-cyan-300 bg-cyan-50"
-                            : "border-slate-200 bg-white hover:bg-sky-50"
-                        )}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm font-extrabold text-slate-950">{persona.label}</span>
-                          <span
-                            className={cx(
-                              "inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.24em]",
-                              active
-                                ? "bg-sky-100 text-sky-900"
-                                : "bg-slate-100 text-slate-600 group-hover:text-slate-800"
-                            )}
-                          >
-                            {persona.badge}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-xs font-semibold leading-5 text-slate-600">{persona.description}</p>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="grid grid-cols-3 gap-2">
-                  <motion.button
-                    whileTap={{ scale: 0.98 }}
-                    onClick={analyzeCurrentPage}
-                    disabled={busyAction !== null}
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-3 py-3 text-xs font-extrabold text-slate-950 transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-70"
-                  >
-                    {busyAction === "analyze" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanSearch className="h-4 w-4" />}
-                    Analyze
-                  </motion.button>
-                  <motion.button
-                    whileTap={{ scale: 0.98 }}
-                    onClick={adaptInterface}
-                    disabled={busyAction !== null}
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-xs font-extrabold text-emerald-900 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-70"
-                  >
-                    {busyAction === "adapt" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-                    Adapt
-                  </motion.button>
-                  <motion.button
-                    whileTap={{ scale: 0.98 }}
-                    onClick={resetChanges}
-                    disabled={busyAction !== null}
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-xs font-extrabold text-slate-900 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-70"
-                  >
-                    {busyAction === "reset" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
-                    Reset
-                  </motion.button>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setComparisonMode("original")}
-                    className={cx(
-                      "flex-1 rounded-2xl border px-3 py-2 text-xs font-extrabold transition",
-                      settings.comparisonMode === "original"
-                        ? "border-amber-200 bg-amber-50 text-amber-900"
-                        : "border-slate-200 bg-white text-slate-700"
-                    )}
-                  >
-                    Original
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setComparisonMode("adapted")}
-                    className={cx(
-                      "flex-1 rounded-2xl border px-3 py-2 text-xs font-extrabold transition",
-                      settings.comparisonMode === "adapted"
-                        ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                        : "border-slate-200 bg-white text-slate-700"
-                    )}
-                  >
-                    Adapted
-                  </button>
-                </div>
-              </SoftCard>
-
-              <SoftCard className="space-y-4">
-                <SectionTitle
-                  title="AI Explanation Panel"
-                  subtitle="Realistic demo values derived from the current page and interaction profile."
-                />
-
-                <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500">
-                    Detected persona
-                  </p>
-                  <p className="mt-2 text-lg font-extrabold text-slate-950">
-                    {analysis?.detectedPersonaLabel || formatPersonaLabel(settings.persona, insights?.detectedPersona)}
-                  </p>
-                  <p className="mt-2 text-sm font-semibold leading-6 text-slate-700">
-                    {analysis
-                      ? buildAdaptationSummary(settings, insights ?? inspectPage(document)).join(" | ")
-                      : "Analyze a page to populate observed challenges and adaptations applied."}
-                  </p>
-                </div>
-
-                <div className="grid gap-3">
-                  <div>
-                    <p className="mb-2 text-xs font-bold uppercase tracking-[0.26em] text-slate-600">
-                      Observed challenges
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {(analysis?.observedChallenges ?? ["Dense navigation", "Small clickable targets", "Low readability"]).map(
-                        (item) => (
-                          <span
-                            key={item}
-                            className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-800"
-                          >
-                            {item}
-                          </span>
-                        )
-                      )}
-                    </div>
-                  </div>
-
-                  <div>
-                    <p className="mb-2 text-xs font-bold uppercase tracking-[0.26em] text-slate-600">
-                      Adaptations applied
-                    </p>
-                    <div className="grid grid-cols-2 gap-2">
-                      {(analysis?.adaptationsApplied ?? ["Larger buttons", "Increased font sizes", "Simplified menus", "Improved spacing"]).map(
-                        (item) => (
-                          <div key={item} className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
-                            {item}
-                          </div>
-                        )
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </SoftCard>
-
-              <SoftCard className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <SectionTitle title="Accessibility Metrics Dashboard" subtitle="Animated before vs after indicators." />
-                  <button
-                    type="button"
-                    onClick={speakSummary}
-                    className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-white px-3 py-1.5 text-xs font-extrabold text-slate-900 transition hover:bg-sky-50"
-                  >
-                    <Volume2 className="h-3.5 w-3.5" />
-                    Read aloud
-                  </button>
-                </div>
-
-                <div className="grid gap-3">
-                  {metricsCard.map((metric) => (
-                    <div key={metric.label} className="rounded-2xl border border-white/8 bg-white/[0.03] p-3">
-                        <div className="mb-2 flex items-center justify-between text-xs font-extrabold text-slate-700">
-                          <span>{metric.label}</span>
-                          <span className="text-slate-600">
-                          {metric.before} {"->"} {metric.after}
-                          </span>
-                        </div>
-                      <ProgressBar
-                        value={
-                          metric.label === "Readability"
-                            ? Number.parseFloat(metric.after)
-                            : metric.label === "Navigation complexity"
-                              ? metric.after === "High"
-                                ? 82
-                                : metric.after === "Medium"
-                                  ? 54
-                                  : 28
-                              : 78
-                        }
-                        color={metric.color}
-                      />
-                    </div>
-                  ))}
                 </div>
               </SoftCard>
 
               <SoftCard className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <Gauge className="h-4 w-4 text-cyan-200" />
-                  <SectionTitle title="Status" subtitle="Live demo actions and current state." />
+                <SectionTitle title="Persona" subtitle="Who is this page being adapted for?" />
+                <div className="flex gap-2">
+                  {PERSONA_OPTIONS.filter((p) => p.id === "elderly" || p.id === "firstTime").map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => persistSettings({ ...settings, persona: p.id })}
+                      className={`flex-1 rounded-2xl border px-3 py-2.5 text-xs font-bold transition ${
+                        settings.persona === p.id
+                          ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-800"
+                          : "border-sky-200 bg-white text-slate-700 hover:bg-sky-50"
+                      }`}
+                    >
+                      <div className="text-base">{p.id === "elderly" ? "👴" : "🆕"}</div>
+                      <div className="mt-0.5">{p.badge}</div>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => persistSettings({ ...settings, persona: "auto" })}
+                    className={`flex-1 rounded-2xl border px-3 py-2.5 text-xs font-bold transition ${
+                      settings.persona === "auto"
+                        ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-800"
+                        : "border-sky-200 bg-white text-slate-700 hover:bg-sky-50"
+                    }`}
+                  >
+                    <div className="text-base">🤖</div>
+                    <div className="mt-0.5">Auto</div>
+                  </button>
+                </div>
+              </SoftCard>
+
+              <SoftCard className="space-y-3">
+                <SectionTitle title="Quick Actions" subtitle="Analyze and adapt the current page." />
+                <div className="flex flex-col gap-2">
+                  <button type="button" onClick={analyzeCurrentPage} disabled={busyAction !== null} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-sky-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-900 transition hover:bg-sky-50 disabled:opacity-60">
+                    {busyAction === "analyze" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanSearch className="h-4 w-4" />}
+                    Analyze Page
+                  </button>
+                  <button type="button" onClick={adaptInterface} disabled={busyAction !== null} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 px-4 py-2.5 text-xs font-bold text-white transition hover:opacity-90 disabled:opacity-60">
+                    {busyAction === "adapt" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+                    Adapt Interface
+                  </button>
+                  <button type="button" onClick={resetChanges} disabled={busyAction !== null} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs font-bold text-rose-900 transition hover:bg-rose-100 disabled:opacity-60">
+                    {busyAction === "reset" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                    Reset Changes
+                  </button>
                 </div>
 
-                <div className={cx("rounded-2xl border px-4 py-3 text-sm font-semibold leading-6", statusToneClass(statusTone))}>
+                {/* Status bar */}
+                <div className={`mt-1 rounded-xl border px-3 py-2 text-xs font-semibold ${statusToneClass(statusTone)}`}>
                   {statusMessage}
                 </div>
-
-                <div className="flex items-center gap-3 rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-cyan-400/10 text-cyan-200">
-                    <Bot className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-extrabold text-slate-950">Current mode</p>
-                    <p className="truncate text-xs font-semibold text-slate-700">
-                      {settings.enabled ? "Adaptive interface active" : "Adaptation paused"} {"|"} {PERSONA_LABELS[settings.persona]}
-                    </p>
-                  </div>
-                  <div className="shrink-0">
-                    <Pill className="border-sky-200 bg-sky-50 text-sky-800">
-                      {settings.comparisonMode === "original" ? "Before" : "After"}
-                    </Pill>
-                  </div>
-                </div>
-
-                {settings.persona === "visuallyImpaired" ? (
-                  <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-3 text-xs font-semibold leading-5 text-cyan-900">
-                    High-contrast and focus-friendly mode is ready. The overlay also exposes a speech shortcut.
-                  </div>
-                ) : null}
               </SoftCard>
             </motion.section>
           ) : (
             <motion.section
-              key="collapsed"
+              key="closed"
               initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}

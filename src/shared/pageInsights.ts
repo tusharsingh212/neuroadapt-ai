@@ -21,21 +21,6 @@ const INTERACTIVE_SELECTOR = [
   "[onclick]"
 ].join(",");
 
-const HEALTHCARE_KEYWORDS = [
-  "appointment",
-  "doctor",
-  "clinic",
-  "health",
-  "patient",
-  "care",
-  "medical",
-  "hospital",
-  "prescription",
-  "pharmacy",
-  "billing",
-  "insurance"
-];
-
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -80,24 +65,15 @@ function collectTextBlocks(root: ParentNode): HTMLElement[] {
     .filter((node) => (node.textContent ?? "").trim().length > 40);
 }
 
-function countHealthcareSignals(text: string): number {
-  const lower = text.toLowerCase();
-  return HEALTHCARE_KEYWORDS.reduce((count, keyword) => count + (lower.includes(keyword) ? 1 : 0), 0);
-}
-
 function estimatePersona({
-  healthcareSignals,
   averageFontSize,
   smallTargetCount,
   navCount,
   interactiveCount,
   textBlockCount
-}: Omit<PageInsights, "title" | "url" | "complexityScore" | "detectedPersona" | "summary" | "formCount" | "bodyTextLength">): PersonaId {
-  if (healthcareSignals >= 3) return "patient";
-  if (averageFontSize < 15 && smallTargetCount >= 4) return "visuallyImpaired";
+}: Omit<PageInsights, "title" | "url" | "complexityScore" | "detectedPersona" | "summary" | "formCount" | "bodyTextLength" | "healthcareSignals">): PersonaId {
   if (navCount >= 3 && interactiveCount >= 18 && textBlockCount >= 6) return "firstTime";
-  if (smallTargetCount >= 6 || averageFontSize < 15) return "elderly";
-  return "auto";
+  return "elderly";
 }
 
 export function inspectPage(root: Document = document): PageInsights {
@@ -120,7 +96,7 @@ export function inspectPage(root: Document = document): PageInsights {
     )
   );
 
-  const healthcareSignals = countHealthcareSignals(bodyText);
+  const healthcareSignals = 0;
   const textBlockCount = textBlocks.length;
   const interactiveCount = interactiveElements.length;
   const complexityScore = clamp(
@@ -138,15 +114,13 @@ export function inspectPage(root: Document = document): PageInsights {
     navCount,
     textBlockCount,
     averageFontSize,
-    smallTargetCount,
-    healthcareSignals
+    smallTargetCount
   });
 
   const summary = [
     `${interactiveCount} interactive elements`,
     `${smallTargetCount} small click targets`,
-    `${navCount} navigation regions`,
-    healthcareSignals > 0 ? "healthcare cues present" : "no healthcare cues"
+    `${navCount} navigation regions`
   ].join(" | ");
 
   return {
@@ -171,10 +145,10 @@ export function buildMetrics(insights: PageInsights, settings: ExtensionSettings
   after: MetricsSnapshot;
 } {
   const beforeReadability = clamp(64 - insights.complexityScore * 0.28 - insights.smallTargetCount * 0.7, 28, 72);
-  const afterBoost = settings.persona === "auto" ? 43 : 45;
+  const afterBoost = 45;
   const afterReadability = clamp(beforeReadability + afterBoost, 72, 97);
   const beforeTask = clamp(140 + insights.complexityScore * 2.05 + insights.interactiveCount * 1.1, 110, 420);
-  const afterTask = clamp(beforeTask - (settings.persona === "patient" ? 145 : 125), 55, beforeTask - 25);
+  const afterTask = clamp(beforeTask - 125, 55, beforeTask - 25);
 
   return {
     before: {
@@ -198,10 +172,8 @@ function challengeList(insights: PageInsights, persona: PersonaId): string[] {
   if (insights.averageFontSize < 15) items.push("Low readability");
   if (insights.textBlockCount >= 8) items.push("Long content blocks");
   if (insights.interactiveCount >= 20) items.push("Crowded controls");
-  if (persona === "patient") items.push("Important care actions are buried");
   if (persona === "firstTime") items.push("Too many paths competing for attention");
   if (persona === "elderly") items.push("Controls feel tightly packed");
-  if (persona === "visuallyImpaired") items.push("Insufficient contrast and focus clarity");
 
   return Array.from(new Set(items)).slice(0, 4);
 }
@@ -210,13 +182,8 @@ function adaptationList(persona: PersonaId): string[] {
   switch (persona) {
     case "elderly":
       return ["Larger buttons", "Increased font sizes", "Expanded spacing", "Reduced clutter"];
-    case "visuallyImpaired":
-      return ["High contrast treatment", "Visible focus outlines", "Larger text", "Text-to-speech shortcut"];
     case "firstTime":
       return ["Step-by-step hints", "Contextual tooltips", "Primary action highlighting", "Simplified secondary actions"];
-    case "patient":
-      return ["Healthcare action prioritization", "Appointment highlighting", "Relevant content emphasis", "Less important content softened"];
-    case "auto":
     default:
       return ["Heuristic simplification", "Layout de-cluttering", "Primary action emphasis", "Accessibility boosts"];
   }

@@ -1,5 +1,5 @@
 import { findElementByRef } from "@/shared/pageContext";
-import type { ChecklistItem, FormFieldGuide } from "@/shared/types";
+import type { ChecklistItem, FormFieldGuide, DomAction } from "@/shared/types";
 
 const GUIDE_ATTRS = [
   "data-neuroadapt-guided",
@@ -102,11 +102,82 @@ export function applyGuidanceFromResponse(
   doc: Document,
   highlightRef?: string,
   tooltip?: string,
-  formFields?: FormFieldGuide[]
+  formFields?: FormFieldGuide[],
+  customCss?: string,
+  domActions?: DomAction[]
 ): void {
   highlightElement(doc, highlightRef, tooltip ?? "Click here to continue.");
   if (formFields?.length) {
     highlightFormFields(doc, formFields);
+  }
+  if (customCss || domActions?.length) {
+    applyDomActions(doc, domActions ?? [], customCss);
+  }
+}
+
+export function resetDomActions(doc: Document): void {
+  const dynamicStyle = doc.getElementById("neuroadapt-dynamic-css");
+  if (dynamicStyle) dynamicStyle.remove();
+
+  const mutated = doc.querySelectorAll("[data-na-original-parent]");
+  mutated.forEach(el => {
+    // Basic restore (not fully comprehensive, but good enough for demo)
+    const display = el.getAttribute("data-na-original-display");
+    if (display) {
+      (el as HTMLElement).style.display = display === "null" ? "" : display;
+    }
+  });
+}
+
+export function applyDomActions(doc: Document, actions: DomAction[], customCss?: string): void {
+  resetDomActions(doc);
+
+  if (customCss) {
+    const style = doc.createElement("style");
+    style.id = "neuroadapt-dynamic-css";
+    style.textContent = customCss;
+    doc.head.appendChild(style);
+  }
+
+  for (const action of actions) {
+    const el = findElementByRef(doc, action.elementRef);
+    if (!el) continue;
+
+    switch (action.action) {
+      case "hide":
+        el.setAttribute("data-na-original-display", el.style.display || "null");
+        el.style.display = "none";
+        break;
+      case "style":
+        if (action.cssStyles) {
+          for (const [prop, val] of Object.entries(action.cssStyles)) {
+            el.style.setProperty(prop, val, "important");
+          }
+        }
+        break;
+      case "addClass":
+        if (action.classes) {
+          el.classList.add(...action.classes);
+        }
+        break;
+      case "changeText":
+        if (action.text) {
+          el.textContent = action.text;
+        }
+        break;
+      case "move":
+        if (action.targetRef) {
+          const target = findElementByRef(doc, action.targetRef);
+          if (target && target.parentNode) {
+            el.setAttribute("data-na-original-parent", "true");
+            if (action.position === "before") target.parentNode.insertBefore(el, target);
+            else if (action.position === "after") target.parentNode.insertBefore(el, target.nextSibling);
+            else if (action.position === "inside-start") target.prepend(el);
+            else target.appendChild(el);
+          }
+        }
+        break;
+    }
   }
 }
 
