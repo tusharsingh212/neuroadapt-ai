@@ -132,7 +132,9 @@ export function TaskAssistantPanel({ settings, persona, onStatus }: TaskAssistan
       document,
       result.highlightElementRef,
       result.highlightTooltip,
-      result.formFields
+      result.formFields,
+      result.customCss,
+      result.domActions
     );
 
     if (result.checklist.length > 0) {

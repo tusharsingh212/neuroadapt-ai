@@ -1,4 +1,5 @@
 import { PERSONA_GUIDANCE, type ExtensionSettings, type PageInsights, type PersonaId } from "@/shared/types";
+import { resetDomActions } from "@/shared/elementGuide";
 
 export const INTERACTIVE_SELECTOR = [
   "button",
@@ -23,21 +24,6 @@ const TRACKED_ATTRS = [
   "data-neuroadapt-tooltip",
   "data-neuroadapt-mutated",
   "data-neuroadapt-inline-style"
-];
-
-const HEALTHCARE_KEYWORDS = [
-  "appointment",
-  "doctor",
-  "clinic",
-  "health",
-  "patient",
-  "care",
-  "medical",
-  "hospital",
-  "prescription",
-  "pharmacy",
-  "billing",
-  "insurance"
 ];
 
 const SECONDARY_KEYWORDS = [
@@ -186,22 +172,6 @@ function ensureStyleSheet(doc: Document): HTMLStyleElement {
       opacity: 0.68 !important;
     }
 
-    html.na-mode-visuallyImpaired body {
-      font-size: 1.12em !important;
-      filter: contrast(1.08);
-    }
-
-    html.na-mode-visuallyImpaired :is(button, [role='button'], a[href], input, select, textarea) {
-      min-height: 50px !important;
-      min-width: 50px !important;
-      border-width: 2px !important;
-      box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.16) !important;
-    }
-
-    html.na-mode-visuallyImpaired [data-neuroadapt-secondary='true'] {
-      opacity: 0.82 !important;
-    }
-
     html.na-mode-firstTime [data-neuroadapt-secondary='true'] {
       opacity: 0.38 !important;
       filter: saturate(0.95);
@@ -256,14 +226,6 @@ function ensureStyleSheet(doc: Document): HTMLStyleElement {
       background-image: linear-gradient(90deg, rgba(236, 253, 245, 0.7), transparent) !important;
     }
 
-    html.na-mode-patient [data-neuroadapt-primary='true'] {
-      box-shadow: 0 0 0 2px rgba(251, 113, 133, 0.35), 0 20px 36px rgba(251, 113, 133, 0.14) !important;
-    }
-
-    html.na-mode-patient [data-neuroadapt-secondary='true'] {
-      opacity: 0.72 !important;
-    }
-
     html.na-preview-original body {
       filter: none !important;
       font-size: 1em !important;
@@ -298,26 +260,17 @@ function updateBodyClasses(doc: Document, settings: ExtensionSettings): void {
   root.classList.toggle("na-preview-original", settings.comparisonMode === "original");
   root.classList.toggle("na-mode-elderly", settings.enabled && settings.persona === "elderly" && settings.comparisonMode === "adapted");
   root.classList.toggle(
-    "na-mode-visuallyImpaired",
-    settings.enabled && settings.persona === "visuallyImpaired" && settings.comparisonMode === "adapted"
-  );
-  root.classList.toggle(
     "na-mode-firstTime",
     settings.enabled && settings.persona === "firstTime" && settings.comparisonMode === "adapted"
   );
-  root.classList.toggle("na-mode-patient", settings.enabled && settings.persona === "patient" && settings.comparisonMode === "adapted");
 }
 
 function markInteractiveTargets(doc: Document, persona: PersonaId, insights: PageInsights): number {
   const interactive = Array.from(doc.querySelectorAll<HTMLElement>(INTERACTIVE_SELECTOR)).filter(isVisible);
   const primaryHints = new Set<string>(
-    persona === "patient"
-      ? HEALTHCARE_KEYWORDS
-      : persona === "firstTime"
-        ? FIRST_TIME_ACTION_KEYWORDS
-        : persona === "elderly"
-          ? ["continue", "help", "support", "save", "submit", "view details"]
-          : ["focus", "open", "read", "listen", "contrast", "summary"]
+    persona === "firstTime"
+      ? FIRST_TIME_ACTION_KEYWORDS
+      : ["continue", "help", "support", "save", "submit", "view details"]
   );
 
   let count = 0;
@@ -326,8 +279,7 @@ function markInteractiveTargets(doc: Document, persona: PersonaId, insights: Pag
     const label = toTitleCase(getLabel(element) || element.tagName.toLowerCase());
     const lower = label.toLowerCase();
     const isPrimary =
-      Array.from(primaryHints).some((keyword) => highlightKeyword(keyword).test(lower)) ||
-      (persona === "patient" && insights.healthcareSignals > 0 && HEALTHCARE_KEYWORDS.some((keyword) => lower.includes(keyword)));
+      Array.from(primaryHints).some((keyword) => highlightKeyword(keyword).test(lower));
     const isSecondary =
       persona === "firstTime"
         ? FIRST_TIME_SECONDARY_KEYWORDS.some((keyword) => lower.includes(keyword))
@@ -364,20 +316,6 @@ function markInteractiveTargets(doc: Document, persona: PersonaId, insights: Pag
       });
     }
 
-    if (persona === "visuallyImpaired") {
-      applyInlineStyles(element, {
-        "min-height": "56px",
-        "min-width": "56px",
-        padding: "1rem 1.15rem",
-        "font-size": "1.08rem",
-        "border-radius": "18px",
-        "font-weight": "700",
-        outline: "3px solid rgba(34, 211, 238, 0.3)",
-        "outline-offset": "2px",
-        "box-shadow": "0 0 0 3px rgba(34, 211, 238, 0.18)"
-      });
-    }
-
     if (isPrimary) {
       applyInlineStyles(element, {
         transform: "scale(1.02)"
@@ -393,15 +331,6 @@ function markInteractiveTargets(doc: Document, persona: PersonaId, insights: Pag
         outline: "3px solid rgba(16, 185, 129, 0.5)",
         "outline-offset": "3px",
         "box-shadow": "0 16px 32px rgba(16, 185, 129, 0.16)"
-      });
-    }
-
-    if (persona === "patient" && isPrimary) {
-      applyInlineStyles(element, {
-        "font-weight": "700",
-        outline: "3px solid rgba(244, 63, 94, 0.35)",
-        "outline-offset": "3px",
-        "box-shadow": "0 18px 36px rgba(244, 63, 94, 0.16)"
       });
     }
 
@@ -425,14 +354,6 @@ function enhanceReadableText(doc: Document, persona: PersonaId): void {
       });
     }
 
-    if (persona === "visuallyImpaired") {
-      applyInlineStyles(element, {
-        "font-size": element.matches("h1, h2, h3, h4") ? "1.24em" : "1.08rem",
-        "line-height": "1.78",
-        "font-weight": element.matches("h1, h2, h3, h4, strong") ? "800" : "650"
-      });
-    }
-
     if (persona === "firstTime") {
       applyInlineStyles(element, {
         "line-height": "1.68",
@@ -448,9 +369,6 @@ function emphasizePageSections(doc: Document, persona: PersonaId): void {
   );
   for (const section of sections) {
     const label = getLabel(section).toLowerCase();
-    if (persona === "patient" && /appointment|patient|health|care|billing|records/.test(label)) {
-      section.setAttribute("data-neuroadapt-primary", "true");
-    }
     if (persona === "firstTime" && /sidebar|filters|advanced|secondary/.test(label)) {
       section.setAttribute("data-neuroadapt-secondary", "true");
     }
@@ -524,19 +442,18 @@ export function applyAdaptation(doc: Document, settings: ExtensionSettings, insi
 
 export function resetAdaptation(doc: Document): void {
   cleanupAttrs(doc);
+  resetDomActions(doc);
   const root = doc.documentElement;
   root.classList.remove(
     "na-enabled",
     "na-mode-elderly",
-    "na-mode-visuallyImpaired",
     "na-mode-firstTime",
-    "na-mode-patient",
     "na-preview-original"
   );
 }
 
 export function buildAdaptationSummary(settings: ExtensionSettings, insights: PageInsights): string[] {
   const persona = settings.persona === "auto" ? insights.detectedPersona : settings.persona;
-  const resolvedPersona: Exclude<PersonaId, "auto"> = persona === "auto" ? "elderly" : persona;
-  return PERSONA_GUIDANCE[resolvedPersona];
+  const resolvedPersona: Exclude<PersonaId, "auto"> = persona === "auto" ? "elderly" : (persona as Exclude<PersonaId, "auto">);
+  return PERSONA_GUIDANCE[resolvedPersona] || [];
 }

@@ -18,6 +18,7 @@ export type NeuroAdaptMessage =
   | { type: "NA_GET_AI_SETTINGS" }
   | { type: "NA_UPDATE_SETTINGS"; payload: Partial<ExtensionSettings> }
   | { type: "NA_SAVE_AI_SETTINGS"; payload: AiSettings }
+  | { type: "NA_VERIFY_BACKEND_KEY" }
   | { type: "NA_RUN_GEMINI_ANALYSIS"; payload: { summary: PageSummary; preferredPersona: PersonaId; question?: string } }
   | {
       type: "NA_RUN_TASK_ASSISTANT";

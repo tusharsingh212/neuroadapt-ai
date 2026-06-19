@@ -16,6 +16,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { applyAdaptation, resetAdaptation } from "@/shared/adaptation";
 import { sendRuntimeMessage } from "@/shared/chrome";
+import { applyDomActions, resetDomActions } from "@/shared/elementGuide";
 import { HeuristicObserver } from "@/shared/heuristics";
 import { buildAnalysisReport, inspectPage } from "@/shared/pageInsights";
 import { extractPageSummary } from "@/shared/pageSummary";
@@ -297,6 +298,7 @@ export function ContentApp(): JSX.Element {
         setVisible(false);
         saveSettings(nextSettings).catch(() => undefined);
         resetAdaptation(document);
+        resetDomActions(document);
 
         sendResponse({ settings: nextSettings, insights: nextInsights, analysis: nextAnalysis, runtime: nextRuntime } satisfies NeuroAdaptStateMessage);
         return false;
@@ -357,6 +359,11 @@ export function ContentApp(): JSX.Element {
       const message = response?.error ? `Gemini unavailable: ${response.error}` : "Gemini unavailable. Using local heuristic analysis.";
       setMessages((current) => [message, ...current].slice(0, 5));
       return heuristicReport;
+    }
+
+    // Apply Gemini-driven CSS and DOM restructuring
+    if (response.analysis.customCss || response.analysis.domActions?.length) {
+      applyDomActions(document, response.analysis.domActions ?? [], response.analysis.customCss);
     }
 
     return buildAnalysisReport(nextSettings, nextInsights, response.analysis);
@@ -425,6 +432,7 @@ export function ContentApp(): JSX.Element {
     });
     setVisible(false);
     resetAdaptation(document);
+    resetDomActions(document);
     setBusy(null);
   }
 

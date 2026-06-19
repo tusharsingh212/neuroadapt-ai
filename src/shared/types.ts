@@ -1,9 +1,6 @@
 export type PersonaId =
   | "elderly"
-  | "visuallyImpaired"
-  | "firstTime"
-  | "patient"
-  | "auto";
+  | "firstTime";
 
 export type ComparisonMode = "original" | "adapted";
 
@@ -26,32 +23,11 @@ export const PERSONA_OPTIONS: PersonaOption[] = [
     accent: "from-amber-400 to-orange-500"
   },
   {
-    id: "visuallyImpaired",
-    label: "👁️ Visually Impaired User",
-    badge: "Contrast",
-    description: "Higher contrast, larger targets, and stronger focus states.",
-    accent: "from-cyan-400 to-sky-500"
-  },
-  {
     id: "firstTime",
     label: "🌱 First-Time Internet User",
     badge: "Guidance",
     description: "Step-by-step hints and gentle reduction of clutter.",
     accent: "from-emerald-400 to-teal-500"
-  },
-  {
-    id: "patient",
-    label: "🏥 Patient",
-    badge: "Care",
-    description: "Prioritize healthcare actions and nearby appointment tasks.",
-    accent: "from-rose-400 to-red-500"
-  },
-  {
-    id: "auto",
-    label: "🤖 Auto Detect (demo mode)",
-    badge: "Heuristic",
-    description: "Simulated detection based on interaction patterns.",
-    accent: "from-violet-400 to-fuchsia-500"
   }
 ];
 
@@ -166,9 +142,21 @@ export interface TaskAssistantResult {
   checklist: ChecklistItem[];
   formFields: FormFieldGuide[];
   walkthroughStep?: string;
+  customCss?: string;
+  domActions?: DomAction[];
   source: "gemini" | "heuristic";
   generatedAt: number;
   cached?: boolean;
+}
+
+export interface DomAction {
+  action: "move" | "hide" | "style" | "addClass" | "changeText";
+  elementRef: string;
+  targetRef?: string;
+  position?: "before" | "after" | "inside-start" | "inside-end";
+  cssStyles?: Record<string, string>;
+  classes?: string[];
+  text?: string;
 }
 
 export interface AiAnalysisResult {
@@ -179,6 +167,8 @@ export interface AiAnalysisResult {
   recommendations: AiRecommendation[];
   guidance: AiGuidanceItem[];
   summary: string;
+  customCss?: string;
+  domActions?: DomAction[];
   cached?: boolean;
   generatedAt: number;
 }
@@ -223,9 +213,9 @@ export interface RuntimeStatus {
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
   enabled: false,
-  persona: "auto",
+  persona: "elderly",
   comparisonMode: "adapted",
-  autoDetect: true
+  autoDetect: false
 };
 
 export const DEFAULT_AI_SETTINGS: AiSettings = {
@@ -235,15 +225,10 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
 
 export const PERSONA_LABELS: Record<PersonaId, string> = {
   elderly: "Elderly User",
-  visuallyImpaired: "Visually Impaired User",
-  firstTime: "First-Time Internet User",
-  patient: "Patient",
-  auto: "Auto Detect"
+  firstTime: "First-Time Internet User"
 };
 
 export const PERSONA_GUIDANCE: Record<Exclude<PersonaId, "auto">, string[]> = {
   elderly: ["Increase text size", "Increase button size", "Reduce visual clutter"],
-  visuallyImpaired: ["High-contrast mode", "Larger text", "Visible focus outlines"],
-  firstTime: ["Step-by-step hints", "Contextual tooltips", "Hide secondary actions"],
-  patient: ["Prioritize appointments", "Highlight healthcare actions", "De-emphasize unrelated items"]
+  firstTime: ["Step-by-step hints", "Contextual tooltips", "Hide secondary actions"]
 };

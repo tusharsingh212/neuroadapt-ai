@@ -144,9 +144,7 @@ export class HeuristicObserver {
       suggestedPersona:
         this.failedInteractions >= 2 || this.repeatClicks >= 3
           ? "firstTime"
-          : this.scrollBursts >= 3
-            ? "visuallyImpaired"
-            : "elderly",
+          : "elderly",
       triggeredBy: `repeatClicks=${this.repeatClicks}, scrollBursts=${this.scrollBursts}, failedInteractions=${this.failedInteractions}, longPauses=${this.longPauses}`
     });
   }
