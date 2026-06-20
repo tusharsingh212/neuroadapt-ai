@@ -58,22 +58,6 @@ const FIRST_TIME_ACTION_KEYWORDS = [
   "search"
 ];
 
-const TASK_HELPER_ACTION_KEYWORDS = [
-  "search",
-  "find",
-  "open",
-  "help",
-  "guide",
-  "where",
-  "how",
-  "apply",
-  "submit",
-  "next",
-  "continue",
-  "download",
-  "upload"
-];
-
 const FIRST_TIME_SECONDARY_KEYWORDS = [
   ...SECONDARY_KEYWORDS,
   "advertisement",
@@ -107,17 +91,6 @@ function firstTimeGuideText(label: string, element: HTMLElement): string {
   if (/save|submit|send|confirm|checkout|apply/.test(lower)) return "Review, then submit";
   if (element.matches("input, select, textarea")) return "Fill this in";
   return "Recommended next action";
-}
-
-function taskHelperGuideText(label: string, element: HTMLElement): string {
-  const lower = label.toLowerCase();
-  if (/search|find|lookup/.test(lower)) return "Use this to find the feature";
-  if (/start|get started|sign up|create account/.test(lower)) return "Begin here to continue the task";
-  if (/next|continue/.test(lower)) return "Move to the next step";
-  if (/book|schedule|appointment/.test(lower)) return "Choose the right service or time";
-  if (/save|submit|send|confirm|checkout|apply/.test(lower)) return "Review, then finish the task";
-  if (element.matches("input, select, textarea")) return "Fill this in to continue";
-  return "Use this to complete the task";
 }
 
 function getLabel(element: Element): string {
@@ -251,61 +224,6 @@ const GLOBAL_ADAPTATION_CSS = `
       background-image: linear-gradient(90deg, rgba(236, 253, 245, 0.7), transparent) !important;
     }
 
-    html.na-mode-taskHelper [data-neuroadapt-secondary='true'] {
-      opacity: 0.45 !important;
-      filter: saturate(0.95);
-    }
-
-    html.na-mode-taskHelper body {
-      line-height: 1.68 !important;
-      letter-spacing: 0.005em !important;
-    }
-
-    html.na-mode-taskHelper :is(main, article, section, form) {
-      scroll-margin-top: 24px !important;
-    }
-
-    html.na-mode-taskHelper [data-neuroadapt-hint='true'] {
-      position: relative !important;
-      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.42), 0 16px 30px rgba(2, 6, 23, 0.18) !important;
-    }
-
-    html.na-mode-taskHelper [data-neuroadapt-primary='true'] {
-      outline: 3px solid rgba(59, 130, 246, 0.5) !important;
-      outline-offset: 3px !important;
-    }
-
-    html.na-mode-taskHelper [data-neuroadapt-step] {
-      position: relative !important;
-      isolation: isolate !important;
-    }
-
-    html.na-mode-taskHelper [data-neuroadapt-step]::after {
-      content: "Step " attr(data-neuroadapt-step) ": " attr(data-neuroadapt-guide);
-      position: absolute !important;
-      z-index: 2147483646 !important;
-      left: 0 !important;
-      bottom: calc(100% + 8px) !important;
-      max-width: min(280px, 80vw) !important;
-      width: max-content !important;
-      padding: 8px 10px !important;
-      border-radius: 999px !important;
-      background: linear-gradient(135deg, #eff6ff, #dbeafe) !important;
-      border: 1px solid rgba(59, 130, 246, 0.35) !important;
-      color: #0f172a !important;
-      font: 800 12px/1.2 Arial, sans-serif !important;
-      box-shadow: 0 14px 30px rgba(15, 23, 42, 0.16) !important;
-      pointer-events: none !important;
-      white-space: normal !important;
-      text-align: left !important;
-    }
-
-    html.na-mode-taskHelper [data-neuroadapt-field-guide='true'] {
-      border-color: rgba(59, 130, 246, 0.65) !important;
-      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16) !important;
-      background-image: linear-gradient(90deg, rgba(239, 246, 255, 0.7), transparent) !important;
-    }
-
     html.na-preview-original body {
       filter: none !important;
       font-size: 1em !important;
@@ -341,14 +259,7 @@ function updateBodyClasses(doc: Document, settings: ExtensionSettings): void {
   root.classList.toggle("na-enabled", settings.enabled && settings.comparisonMode === "adapted");
   root.classList.toggle("na-preview-original", settings.comparisonMode === "original");
   root.classList.toggle("na-mode-elderly", settings.enabled && settings.persona === "elderly" && settings.comparisonMode === "adapted");
-  root.classList.toggle(
-    "na-mode-firstTime",
-    settings.enabled && settings.persona === "firstTime" && settings.comparisonMode === "adapted"
-  );
-  root.classList.toggle(
-    "na-mode-taskHelper",
-    settings.enabled && settings.persona === "taskHelper" && settings.comparisonMode === "adapted"
-  );
+  root.classList.toggle("na-mode-firstTime", settings.enabled && settings.persona === "firstTime" && settings.comparisonMode === "adapted");
 }
 
 function markInteractiveTargets(doc: Document, persona: PersonaId, insights: PageInsights): number {
@@ -356,8 +267,6 @@ function markInteractiveTargets(doc: Document, persona: PersonaId, insights: Pag
   const primaryHints = new Set<string>(
     persona === "firstTime"
       ? FIRST_TIME_ACTION_KEYWORDS
-      : persona === "taskHelper"
-        ? TASK_HELPER_ACTION_KEYWORDS
       : ["continue", "help", "support", "save", "submit", "view details"]
   );
 
@@ -373,8 +282,7 @@ function markInteractiveTargets(doc: Document, persona: PersonaId, insights: Pag
         ? FIRST_TIME_SECONDARY_KEYWORDS.some((keyword) => lower.includes(keyword))
         : SECONDARY_KEYWORDS.some((keyword) => lower.includes(keyword));
     const isHint =
-      (persona === "firstTime" && FIRST_TIME_ACTION_KEYWORDS.some((keyword) => highlightKeyword(keyword).test(lower)) && !isSecondary) ||
-      (persona === "taskHelper" && TASK_HELPER_ACTION_KEYWORDS.some((keyword) => highlightKeyword(keyword).test(lower)) && !isSecondary);
+      persona === "firstTime" && FIRST_TIME_ACTION_KEYWORDS.some((keyword) => highlightKeyword(keyword).test(lower)) && !isSecondary;
 
     element.setAttribute("data-neuroadapt-target", "true");
     element.setAttribute("data-neuroadapt-mutated", "true");
@@ -384,11 +292,6 @@ function markInteractiveTargets(doc: Document, persona: PersonaId, insights: Pag
     if (persona === "firstTime" && isHint && firstTimeStep <= 4) {
       element.setAttribute("data-neuroadapt-step", String(firstTimeStep));
       element.setAttribute("data-neuroadapt-guide", firstTimeGuideText(label, element));
-      firstTimeStep += 1;
-    }
-    if (persona === "taskHelper" && isHint && firstTimeStep <= 4) {
-      element.setAttribute("data-neuroadapt-step", String(firstTimeStep));
-      element.setAttribute("data-neuroadapt-guide", taskHelperGuideText(label, element));
       firstTimeStep += 1;
     }
     if (!element.getAttribute("title") && label) {
@@ -429,18 +332,6 @@ function markInteractiveTargets(doc: Document, persona: PersonaId, insights: Pag
       });
     }
 
-    if (persona === "taskHelper" && (isPrimary || isHint)) {
-      applyInlineStyles(element, {
-        "font-weight": "700",
-        "min-height": "48px",
-        padding: "0.85rem 1rem",
-        "border-radius": "16px",
-        outline: "3px solid rgba(59, 130, 246, 0.5)",
-        "outline-offset": "3px",
-        "box-shadow": "0 16px 32px rgba(59, 130, 246, 0.16)"
-      });
-    }
-
     count += 1;
   }
 
@@ -469,12 +360,6 @@ function enhanceReadableText(doc: Document, persona: PersonaId): void {
       });
     }
 
-    if (persona === "taskHelper") {
-      applyInlineStyles(element, {
-        "line-height": "1.68",
-        "font-weight": element.matches("h1, h2, h3, h4, strong, label") ? "800" : "550"
-      });
-    }
   }
 }
 
@@ -483,9 +368,6 @@ function emphasizePageSections(doc: Document, persona: PersonaId): void {
   for (const section of sections) {
     const label = getLabel(section).toLowerCase();
     if (persona === "firstTime" && /sidebar|filters|advanced|secondary/.test(label)) {
-      section.setAttribute("data-neuroadapt-secondary", "true");
-    }
-    if (persona === "taskHelper" && /sidebar|filters|advanced|secondary/.test(label)) {
       section.setAttribute("data-neuroadapt-secondary", "true");
     }
     if (
@@ -509,12 +391,6 @@ function emphasizePageSections(doc: Document, persona: PersonaId): void {
       });
     }
 
-    if (persona === "taskHelper" && section.hasAttribute("data-neuroadapt-secondary")) {
-      applyInlineStyles(section, {
-        opacity: "0.45",
-        transform: "scale(0.99)"
-      });
-    }
   }
 }
 
@@ -553,11 +429,11 @@ export function applyAdaptation(doc: Document, settings: ExtensionSettings, insi
     return 0;
   }
 
-  const persona = settings.persona === "auto" ? insights.detectedPersona : settings.persona;
+  const persona = settings.persona;
   const targetCount = markInteractiveTargets(doc, persona, insights);
   enhanceReadableText(doc, persona);
   emphasizePageSections(doc, persona);
-  if (persona === "firstTime" || persona === "taskHelper") {
+  if (persona === "firstTime") {
     guideFirstTimeForms(doc);
   }
   return targetCount;
@@ -571,13 +447,10 @@ export function resetAdaptation(doc: Document): void {
     "na-enabled",
     "na-mode-elderly",
     "na-mode-firstTime",
-    "na-mode-taskHelper",
     "na-preview-original"
   );
 }
 
-export function buildAdaptationSummary(settings: ExtensionSettings, insights: PageInsights): string[] {
-  const persona = settings.persona === "auto" ? insights.detectedPersona : settings.persona;
-  const resolvedPersona: Exclude<PersonaId, "auto"> = persona === "auto" ? "elderly" : (persona as Exclude<PersonaId, "auto">);
-  return PERSONA_GUIDANCE[resolvedPersona] || [];
+export function buildAdaptationSummary(settings: ExtensionSettings, _insights: PageInsights): string[] {
+  return PERSONA_GUIDANCE[settings.persona] ?? [];
 }

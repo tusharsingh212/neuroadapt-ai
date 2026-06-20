@@ -263,7 +263,6 @@ function challengeList(insights: PageInsights, persona: PersonaId): string[] {
   if (insights.textBlockCount >= 8) items.push("Long content blocks");
   if (insights.interactiveCount >= 20) items.push("Crowded controls");
   if (persona === "firstTime") items.push("Too many paths competing for attention");
-  if (persona === "taskHelper") items.push("Users may not know where the right feature lives");
   if (persona === "elderly") items.push("Controls feel tightly packed");
 
   return Array.from(new Set(items)).slice(0, 4);
@@ -275,17 +274,13 @@ function adaptationList(persona: PersonaId): string[] {
       return ["Larger buttons", "Increased font sizes", "Expanded spacing", "Reduced clutter"];
     case "firstTime":
       return ["Step-by-step hints", "Contextual tooltips", "Primary action highlighting", "Simplified secondary actions"];
-    case "taskHelper":
-      return ["Exact feature highlighting", "Short next-step prompts", "Contextual task guidance", "Visible helper tooltips"];
-    default:
-      return ["Heuristic simplification", "Layout de-cluttering", "Primary action emphasis", "Accessibility boosts"];
   }
 }
 
 export function buildAnalysisReport(settings: ExtensionSettings, insights: PageInsights, ai?: AiAnalysisResult): AnalysisReport {
-  const persona = settings.persona === "auto" ? insights.detectedPersona : settings.persona;
+  const persona = settings.persona;
   const metrics = buildMetrics(insights, settings);
-  const aiPersona = ai?.persona && ai.persona !== "auto" ? ai.persona : persona;
+  const aiPersona = ai?.persona ?? persona;
 
   return {
     detectedPersona: aiPersona,

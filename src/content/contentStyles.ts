@@ -366,20 +366,43 @@ export const contentStyles = `
     gap: 6px;
   }
 
-  .na-guide-btn {
-    display: inline-flex;
+  .na-guide-main-btn {
+    display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 8px 12px;
-    min-height: 36px;
-    font-size: 11px;
-    background: rgba(16, 185, 129, 0.12);
-    box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.25);
+    gap: 10px;
+    width: 100%;
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(34, 211, 238, 0.08));
+    color: #a7f3d0;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: left;
+    appearance: none;
+    transition: all 0.18s ease;
+    margin-bottom: 10px;
   }
 
-  .na-guide-btn.na-guide-active {
-    background: rgba(16, 185, 129, 0.28);
-    color: #ecfdf5;
+  .na-guide-main-btn span {
+    flex: 1;
+  }
+
+  .na-guide-main-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.22), rgba(34, 211, 238, 0.16));
+    transform: translateY(-1px);
+    box-shadow: 0 8px 24px rgba(16, 185, 129, 0.15);
+  }
+
+  .na-guide-main-btn:focus-visible {
+    outline: 3px solid rgba(56, 189, 248, 0.9);
+    outline-offset: 2px;
+  }
+
+  .na-guide-main-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .na-chat-body {
@@ -660,6 +683,21 @@ export const contentStyles = `
   .na-suggestion-chip:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .na-adapt-section {
+    border-color: rgba(16, 185, 129, 0.15);
+  }
+
+  .na-adapt-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .na-adapt-btn {
+    flex: 1;
+    min-width: 0;
   }
 
   /* ---- Sidebar ---- */

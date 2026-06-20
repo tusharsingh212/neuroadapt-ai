@@ -3,12 +3,9 @@ import {
   ArrowRight,
   Bot,
   ChevronDown,
-  ChevronUp,
-  Eye,
   Loader2,
   Mic,
   RefreshCcw,
-  ScanSearch,
   ShieldCheck,
   Sparkles
 } from "lucide-react";
@@ -20,17 +17,15 @@ import { applyDomActions, resetDomActions } from "@/shared/elementGuide";
 import { HeuristicObserver, type HeuristicSignal } from "@/shared/heuristics";
 import { buildAnalysisReport, inspectPage } from "@/shared/pageInsights";
 import { extractPageSummary } from "@/shared/pageSummary";
-import { formatTaskTime, progressValue } from "@/shared/metrics";
 import {
   DEFAULT_SETTINGS,
-  PERSONA_LABELS,
   type AnalysisReport,
   type ExtensionSettings,
   type PageInsights,
   type RuntimeStatus
 } from "@/shared/types";
 import { loadSettings, saveSettings, subscribeToSettings } from "@/shared/storage";
-import { cx, Pill, ProgressBar, SectionTitle } from "@/shared/ui";
+import { Pill, SectionTitle } from "@/shared/ui";
 
 import type { NeuroAdaptMessage, NeuroAdaptStateMessage } from "@/shared/messaging";
 import type { AiAnalysisMessage } from "@/shared/messaging";
@@ -39,8 +34,6 @@ import { TaskAssistantPanel } from "@/content/TaskAssistantPanel";
 import { TaskSidebar } from "@/content/TaskSidebar";
 import { OverlayPanel } from "@/content/OverlayPanel";
 import type { ConfusionSignal } from "@/shared/types";
-import { toggleOverlayMode } from "@/shared/overlayManager";
-
 function feedLines(report: AnalysisReport, insights: PageInsights): string[] {
   const persona = report.detectedPersona;
   const lines = [
@@ -56,37 +49,18 @@ function feedLines(report: AnalysisReport, insights: PageInsights): string[] {
 
   if (persona === "firstTime") {
     lines.splice(2, 0, "Adding step-by-step guidance...");
-  } else if (persona === "taskHelper") {
-    lines.splice(2, 0, "Finding the exact feature and next action...");
-  } else if (persona === "elderly") {
+  } else {
     lines.splice(2, 0, "Increasing target size and spacing...");
   }
 
   if (report.ai?.source === "gemini") {
-    lines.splice(1, 0, report.ai.cached ? "Using cached Gemini accessibility reasoning." : "Gemini accessibility reasoning complete.");
+    lines.splice(1, 0, report.ai.cached ? "Using cached AI accessibility reasoning." : "AI accessibility reasoning complete.");
     if (report.ai.summary) lines.splice(2, 0, report.ai.summary);
   }
 
   return lines;
 }
 
-function personaTitle(settings: ExtensionSettings, insights: PageInsights): string {
-  if (settings.persona !== "auto") {
-    return PERSONA_LABELS[settings.persona];
-  }
-  return `${PERSONA_LABELS.auto} -> ${PERSONA_LABELS[insights.detectedPersona]}`;
-}
-
-function complexityValue(label: AnalysisReport["before"]["navigationComplexity"]): number {
-  if (label === "High") return 82;
-  if (label === "Medium") return 54;
-  return 28;
-}
-
-function settingsForReport(settings: ExtensionSettings, report: AnalysisReport): ExtensionSettings {
-  if (settings.persona !== "auto") return settings;
-  return { ...settings, persona: report.detectedPersona };
-}
 
 export function ContentApp(): JSX.Element {
   const [settings, setSettings] = useState<ExtensionSettings>(DEFAULT_SETTINGS);
@@ -97,15 +71,15 @@ export function ContentApp(): JSX.Element {
     messages: ["Adaptive assistant loaded.", "Awaiting page analysis."],
     lastUpdated: Date.now()
   });
-  const [messages, setMessages] = useState<string[]>(runtime.messages);
+  const [, setMessages] = useState<string[]>(runtime.messages);
   const [collapsed, setCollapsed] = useState(false);
   const [visible, setVisible] = useState(false);
   const [comparison, setComparison] = useState<"original" | "adapted">(DEFAULT_SETTINGS.comparisonMode);
   const [busy, setBusy] = useState<"analyze" | "adapt" | "reset" | null>(null);
 
-  const [confusionSignals, setConfusionSignals] = useState<ConfusionSignal[]>([]);
+  const [, setConfusionSignals] = useState<ConfusionSignal[]>([]);
   const [pendingSuggestion, setPendingSuggestion] = useState<HeuristicSignal | null>(null);
-  const [sidebarVisible, setSidebarVisible] = useState(false);
+  const [, setSidebarVisible] = useState(false);
   const settingsRef = useRef(settings);
   const debounceRef = useRef<number | null>(null);
 
@@ -158,8 +132,7 @@ export function ContentApp(): JSX.Element {
       return;
     }
 
-    const nextPersona = settings.persona === "auto" ? insights.detectedPersona : settings.persona;
-    applyAdaptation(document, { ...settings, persona: nextPersona, comparisonMode: comparison }, insights);
+    applyAdaptation(document, { ...settings, comparisonMode: comparison }, insights);
     setVisible(true);
   }, [settings, comparison, insights]);
 
@@ -245,7 +218,7 @@ export function ContentApp(): JSX.Element {
           setMessages(nextFeed);
           setRuntime(nextRuntime);
           setVisible(true);
-          applyAdaptation(document, settingsForReport(previewSettings, nextAnalysis), nextInsights);
+          applyAdaptation(document, previewSettings, nextInsights);
           sendResponse({ settings: settingsRef.current, insights: nextInsights, analysis: nextAnalysis, runtime: nextRuntime } satisfies NeuroAdaptStateMessage);
         })();
         return true;
@@ -257,8 +230,7 @@ export function ContentApp(): JSX.Element {
             ...settingsRef.current,
             enabled: true,
             persona: message.payload?.persona ?? settingsRef.current.persona,
-            comparisonMode: "adapted",
-            autoDetect: true
+            comparisonMode: "adapted"
           };
 
           const nextInsights = inspectPage(document);
@@ -279,7 +251,7 @@ export function ContentApp(): JSX.Element {
           setRuntime(nextRuntime);
           setVisible(true);
           saveSettings(nextSettings).catch(() => undefined);
-          applyAdaptation(document, settingsForReport(nextSettings, nextAnalysis), nextInsights);
+          applyAdaptation(document, nextSettings, nextInsights);
 
           sendResponse({ settings: nextSettings, insights: nextInsights, analysis: nextAnalysis, runtime: nextRuntime } satisfies NeuroAdaptStateMessage);
         })();
@@ -360,7 +332,7 @@ export function ContentApp(): JSX.Element {
     const nextInsights = inspectPage(document);
     const heuristicReport = buildAnalysisReport(nextSettings, nextInsights);
     const response = await sendRuntimeMessage<AiAnalysisMessage>({
-      type: "NA_RUN_GEMINI_ANALYSIS",
+      type: "NA_RUN_ANALYSIS",
       payload: {
         summary: extractPageSummary(document),
         preferredPersona: nextSettings.persona,
@@ -369,7 +341,7 @@ export function ContentApp(): JSX.Element {
     });
 
     if (!response?.ok || !response.analysis) {
-      const message = response?.error ? `Gemini unavailable: ${response.error}` : "Gemini unavailable. Using local heuristic analysis.";
+      const message = response?.error ? `AI unavailable: ${response.error}` : "AI unavailable. Using local heuristic analysis.";
       setMessages((current) => [message, ...current].slice(0, 5));
       return heuristicReport;
     }
@@ -380,23 +352,6 @@ export function ContentApp(): JSX.Element {
     }
 
     return buildAnalysisReport(nextSettings, nextInsights, response.analysis);
-  }
-
-  async function analyzePage(): Promise<void> {
-    setBusy("analyze");
-    const nextInsights = inspectPage(document);
-    const nextAnalysis = await runGeminiAnalysis(settingsRef.current);
-    const nextFeed = feedLines(nextAnalysis, nextInsights);
-    setInsights(nextInsights);
-    setAnalysis(nextAnalysis);
-    setMessages(nextFeed);
-    setRuntime({
-      state: "analyzing",
-      messages: nextFeed,
-      lastUpdated: Date.now()
-    });
-    setVisible(true);
-    setBusy(null);
   }
 
   async function adaptPage(): Promise<void> {
@@ -420,7 +375,7 @@ export function ContentApp(): JSX.Element {
       lastUpdated: Date.now()
     });
     setVisible(true);
-    applyAdaptation(document, settingsForReport(nextSettings, nextAnalysis), nextInsights);
+    applyAdaptation(document, nextSettings, nextInsights);
     setBusy(null);
   }
 
@@ -449,18 +404,6 @@ export function ContentApp(): JSX.Element {
     setBusy(null);
   }
 
-  async function toggleComparison(nextMode: "original" | "adapted"): Promise<void> {
-    const nextSettings = { ...settingsRef.current, comparisonMode: nextMode };
-    await persistSettings(nextSettings);
-
-    if (nextMode === "adapted") {
-      applyAdaptation(document, nextSettings, insights);
-      setVisible(true);
-    } else {
-      resetAdaptation(document);
-    }
-  }
-
   function speakSummary(): void {
     if (!("speechSynthesis" in window)) return;
     const utterance = new SpeechSynthesisUtterance(
@@ -469,13 +412,6 @@ export function ContentApp(): JSX.Element {
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
     setMessages((current) => ["Speaking page summary.", ...current].slice(0, 5));
-  }
-
-  function currentModeLabel(): string {
-    if (settings.persona === "auto") {
-      return `${PERSONA_LABELS.auto} -> ${PERSONA_LABELS[insights.detectedPersona]}`;
-    }
-    return PERSONA_LABELS[settings.persona];
   }
 
   useEffect(() => {
@@ -502,8 +438,7 @@ export function ContentApp(): JSX.Element {
       ...settingsRef.current,
       enabled: true,
       persona: signal.suggestedPersona,
-      comparisonMode: "adapted",
-      autoDetect: true
+      comparisonMode: "adapted"
     };
     const nextInsights = inspectPage(document);
     const nextAnalysis = buildAnalysisReport(nextSettings, nextInsights);
@@ -526,29 +461,7 @@ export function ContentApp(): JSX.Element {
     setPendingSuggestion(null);
   }
 
-  const resolvedPersona = settings.persona === "auto" ? insights.detectedPersona : settings.persona;
-  const isFirstTimeMode = resolvedPersona === "firstTime" || resolvedPersona === "taskHelper";
-
-  const metricRows = [
-    {
-      label: "Readability",
-      before: `${analysis.before.readability}%`,
-      after: `${analysis.after.readability}%`,
-      value: analysis.after.readability
-    },
-    {
-      label: "Navigation complexity",
-      before: analysis.before.navigationComplexity,
-      after: analysis.after.navigationComplexity,
-      value: complexityValue(analysis.after.navigationComplexity)
-    },
-    {
-      label: "Estimated task time",
-      before: formatTaskTime(analysis.before.estimatedTaskSeconds),
-      after: formatTaskTime(analysis.after.estimatedTaskSeconds),
-      value: Math.max(15, Math.min(92, Math.round((analysis.after.estimatedTaskSeconds / Math.max(analysis.before.estimatedTaskSeconds, 1)) * 100)))
-    }
-  ];
+  const resolvedPersona = settings.persona;
 
   return (
     <div className="na-root" aria-live="polite">
@@ -598,7 +511,7 @@ export function ContentApp(): JSX.Element {
                     <div className="na-button-row">
                       <button type="button" className="na-button na-primary" onClick={acceptHeuristicSuggestion}>
                         <ShieldCheck size={14} />
-                        <span style={{ marginLeft: 8 }}>Apply adaptation</span>
+                        <span style={{ marginLeft: 8 }}>Apply</span>
                       </button>
                       <button type="button" className="na-button na-secondary" onClick={dismissHeuristicSuggestion}>
                         <span>Not now</span>
@@ -614,6 +527,7 @@ export function ContentApp(): JSX.Element {
                   onGoalChange={() => setSidebarVisible((v) => !v)}
                   onConfusion={(signals) => setConfusionSignals(signals)}
                 />
+
                 <OverlayPanel />
                 <TaskSidebar onRequestReanalysis={() => {
                   if (settings.enabled) {
@@ -621,197 +535,31 @@ export function ContentApp(): JSX.Element {
                   }
                 }} />
 
-                {isFirstTimeMode ? (
-                  <div className="na-section na-first-time-banner">
-                    <div className="na-section-head">
-                      <SectionTitle
-                        title={settings.persona === "taskHelper" ? "Task Helper Mode" : "First-Time Guide Mode"}
-                        subtitle={
-                          settings.persona === "taskHelper"
-                            ? "The assistant is finding the exact feature and next action for this page."
-                            : "Step-by-step AI guidance is active for this page."
-                        }
-                      />
-                      <Pill className="text-[10px] border-emerald-400/20 bg-emerald-400/10 text-emerald-100">
-                        {settings.persona === "taskHelper" ? "Task finder" : "Live guide"}
-                      </Pill>
-                    </div>
-                    <p className="na-text na-muted">
-                      {settings.persona === "taskHelper"
-                        ? "Ask questions in the Task Helper above - I will tell you where the feature is, highlight the right control, and point you to the next action."
-                        : "Ask questions in the First-Time Assistant above - I will answer using Gemini and highlight what to click on the page."}
-                    </p>
-                  </div>
-                ) : null}
-
-                <div className="na-section">
+                <div className="na-section na-adapt-section">
                   <div className="na-section-head">
-                    <SectionTitle title="Floating AI Assistant" subtitle="Live messages from the adaptive engine." />
-                    <Pill className="text-[10px] border-cyan-400/20 bg-cyan-400/10 text-cyan-100">
-                      {runtime.state}
+                    <SectionTitle
+                      title="Page Comfort Mode"
+                      subtitle={settings.enabled ? "Accessibility improvements are active." : "Enable to make this page easier to use."}
+                    />
+                    <Pill className={`text-[10px] ${settings.enabled ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-100" : "border-white/10 bg-white/5"}`}>
+                      {settings.enabled ? "Active" : "Off"}
                     </Pill>
                   </div>
-
-                  <div className="na-feed">
-                    {messages.map((message, index) => (
-                      <div key={`${message}-${index}`} className="na-feed-item">
-                        <span className="na-dot" />
-                        <span>{message}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="na-section">
-                  <div className="na-section-head">
-                    <SectionTitle title="AI Explanation Panel" subtitle="Heuristic values are clearly marked as demo behavior." />
-                    <button className="na-button na-secondary" type="button" onClick={speakSummary}>
+                  <div className="na-adapt-actions">
+                    <button type="button" className="na-button na-primary na-adapt-btn" onClick={adaptPage} disabled={!!busy}>
+                      {busy === "adapt" ? <Loader2 size={14} className="inline animate-spin" /> : <ShieldCheck size={14} />}
+                      <span style={{ marginLeft: 6 }}>{settings.enabled ? "Re-adapt" : "Make Comfortable"}</span>
+                    </button>
+                    <button type="button" className="na-button na-secondary" onClick={speakSummary} aria-label="Read page summary aloud">
                       <Mic size={14} />
                     </button>
+                    {settings.enabled ? (
+                      <button type="button" className="na-button na-warning" onClick={resetPage} disabled={!!busy}>
+                        {busy === "reset" ? <Loader2 size={14} className="inline animate-spin" /> : <RefreshCcw size={14} />}
+                        <span style={{ marginLeft: 6 }}>Reset</span>
+                      </button>
+                    ) : null}
                   </div>
-
-                  <p className="na-text">
-                    <strong>Detected Persona:</strong> {personaTitle(settings, insights)}
-                  </p>
-                  <p className="na-text na-muted" style={{ marginTop: 8 }}>
-                    <strong>Page:</strong> {insights.title}
-                  </p>
-                  {analysis.ai ? (
-                    <p className="na-text na-muted" style={{ marginTop: 8 }}>
-                      <strong>Gemini score:</strong> {analysis.ai.score}/100
-                    </p>
-                  ) : null}
-
-                  <div className="na-grid" style={{ marginTop: 12 }}>
-                    <div>
-                      <div className="na-label" style={{ marginBottom: 8 }}>
-                        Observed Challenges
-                      </div>
-                      <div className="na-chip-row">
-                        {analysis.observedChallenges.map((item) => (
-                          <span key={item} className="na-chip">
-                            {item}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="na-label" style={{ marginBottom: 8 }}>
-                        Adaptations Applied
-                      </div>
-                      <div className="na-chip-row">
-                        {analysis.adaptationsApplied.map((item) => (
-                          <span key={item} className="na-chip">
-                            {item}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {analysis.ai?.guidance.length ? (
-                    <div style={{ marginTop: 12 }}>
-                      <div className="na-label" style={{ marginBottom: 8 }}>
-                        AI Guidance
-                      </div>
-                      <div className="na-feed">
-                        {analysis.ai.guidance.slice(0, 3).map((item) => (
-                          <div key={item.title} className="na-feed-item">
-                            <span className="na-dot" />
-                            <span>
-                              <strong>{item.title}:</strong> {item.body}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="na-section">
-                  <div className="na-section-head">
-                    <SectionTitle title="Before vs After" subtitle="Drag the slider to compare original and adapted states." />
-                    <Pill className="text-[10px] border-white/10 bg-white/5">
-                      {comparison === "original" ? "Original" : "Adapted"}
-                    </Pill>
-                  </div>
-
-                  <input
-                    className="na-slider"
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={comparison === "adapted" ? 100 : 0}
-                    onChange={(event) => toggleComparison(Number(event.currentTarget.value) > 50 ? "adapted" : "original")}
-                    aria-label="Compare original and adapted interface"
-                  />
-
-                  <div className="na-chip-row" style={{ marginTop: 10 }}>
-                    <span className="na-pill">Original page</span>
-                    <span className="na-pill">Adapted page</span>
-                  </div>
-                </div>
-
-                <div className="na-section">
-                  <div className="na-section-head">
-                    <SectionTitle title="Accessibility Metrics Dashboard" subtitle="Animated improvements based on the current page." />
-                    <Pill className="text-[10px] border-emerald-400/20 bg-emerald-400/10 text-emerald-100">
-                      Demo values
-                    </Pill>
-                  </div>
-
-                  <div className="na-metrics">
-                    {metricRows.map((row) => (
-                      <div key={row.label} className="na-metric-card">
-                        <div className="na-metric-head">
-                          <span>{row.label}</span>
-                          <span>
-                            {row.before} {"->"} {row.after}
-                          </span>
-                        </div>
-                        <ProgressBar value={row.value} />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="na-section">
-                  <div className="na-section-head">
-                    <SectionTitle title="Quick actions" subtitle="Use the same controls from the popup." />
-                    <Pill className="text-[10px] border-white/10 bg-white/5">Keyboard accessible</Pill>
-                  </div>
-
-                  <div className="na-button-row">
-                    <button type="button" className="na-button na-primary" onClick={analyzePage}>
-                      {busy === "analyze" ? <Loader2 size={14} className="inline animate-spin" /> : <ScanSearch size={14} />}
-                      <span style={{ marginLeft: 8 }}>Analyze</span>
-                    </button>
-                    <button type="button" className="na-button na-primary" onClick={adaptPage}>
-                      {busy === "adapt" ? <Loader2 size={14} className="inline animate-spin" /> : <ShieldCheck size={14} />}
-                      <span style={{ marginLeft: 8 }}>Adapt</span>
-                    </button>
-                    <button type="button" className="na-button na-warning" onClick={resetPage}>
-                      {busy === "reset" ? <Loader2 size={14} className="inline animate-spin" /> : <RefreshCcw size={14} />}
-                      <span style={{ marginLeft: 8 }}>Reset</span>
-                    </button>
-                    <button type="button" className="na-button" onClick={speakSummary}>
-                      <Eye size={14} />
-                      <span style={{ marginLeft: 8 }}>Read out</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="na-section">
-                  <div className="na-section-head">
-                    <SectionTitle title="Status" subtitle="Current page state and selection." />
-                  </div>
-                  <p className="na-text">
-                    <strong>Persona:</strong> {PERSONA_LABELS[settings.persona]}
-                  </p>
-                  <p className="na-text na-muted" style={{ marginTop: 8 }}>
-                    <strong>Readability:</strong> {analysis.before.readability}% before / {analysis.after.readability}% after
-                  </p>
                 </div>
               </div>
             </div>

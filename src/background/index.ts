@@ -1,17 +1,33 @@
+// Phase 2: All AI calls in this file will be replaced with requests to the
+// NeuroAdapt backend API. See src/shared/apiClient.ts for the planned interface.
+// Until then, set BACKEND_GEMINI_API_KEY below to enable AI features during development.
+
 import { DEFAULT_SETTINGS } from "@/shared/types";
 import { analyzeWithGemini } from "@/shared/gemini";
 import { analyzeTaskWithGemini } from "@/shared/taskAssistant";
-import { callGemini } from "@/shared/geminiClient";
 import { createAbortSignal } from "@/shared/requestManager";
-import { loadAiSettings, loadSettings, saveAiSettings, saveSettings } from "@/shared/storage";
-import type { AiAnalysisMessage, NeuroAdaptMessage, TaskAssistantMessage } from "@/shared/messaging";
+import { loadSettings, saveSettings } from "@/shared/storage";
+import type {
+  AiAnalysisMessage,
+  NeuroAdaptMessage,
+  TaskAssistantMessage,
+} from "@/shared/messaging";
 import type { AiAnalysisResult, TaskAssistantResult } from "@/shared/types";
 
-const CACHE_MAX_SIZE = 50;
+// Phase 2: This constant will be removed once the backend API is live.
+// To enable AI features during local development, paste a valid Gemini key here.
+const BACKEND_GEMINI_API_KEY: string =
+  import.meta.env.VITE_GEMINI_API_KEY || "";
+const DEFAULT_MODEL = "gemini-1.5-flash";
 
+const CACHE_MAX_SIZE = 50;
 const analysisCache = new Map<string, AiAnalysisResult>();
 const taskAssistantCache = new Map<string, TaskAssistantResult>();
 let lastGeminiRequestAt = 0;
+
+type AnalysisMsg = Extract<NeuroAdaptMessage, { type: "NA_RUN_ANALYSIS" }>;
+type TaskMsg = Extract<NeuroAdaptMessage, { type: "NA_RUN_TASK_ASSISTANT" }>;
+type UpdateMsg = Extract<NeuroAdaptMessage, { type: "NA_UPDATE_SETTINGS" }>;
 
 function trimCache(cache: Map<string, unknown>, maxSize: number): void {
   while (cache.size > maxSize) {
@@ -20,36 +36,29 @@ function trimCache(cache: Map<string, unknown>, maxSize: number): void {
   }
 }
 
-// PLACE YOUR GEMINI API KEY HERE
-// Get a valid key from https://aistudio.google.com/apikey
-// Format: AIzaSy... (starts with AIza)
-const BACKEND_GEMINI_API_KEY: string = "";
-
-function cacheKey(message: Extract<NeuroAdaptMessage, { type: "NA_RUN_GEMINI_ANALYSIS" }>): string {
-  const { summary, preferredPersona, question } = message.payload;
+function cacheKey(msg: AnalysisMsg): string {
+  const { summary, preferredPersona, question } = msg.payload;
   return JSON.stringify({
     url: summary.url,
     title: summary.title,
     preferredPersona,
     question: question ?? "",
     stats: summary.stats,
-    headings: summary.headings.slice(0, 10)
+    headings: summary.headings.slice(0, 10),
   });
 }
 
-function taskCacheKey(message: Extract<NeuroAdaptMessage, { type: "NA_RUN_TASK_ASSISTANT" }>): string | null {
-  const { context, question, conversationHistory } = message.payload;
+function taskCacheKey(msg: TaskMsg): string | null {
+  const { context, question, conversationHistory } = msg.payload;
   const historyLen = conversationHistory?.length ?? 0;
 
-  // Don't cache multi-turn chat — page state and context change.
-  if (historyLen > 2) {
-    return null;
-  }
+  // Don't cache multi-turn chat — page state and context change between turns.
+  if (historyLen > 2) return null;
 
   return JSON.stringify({
     url: context.summary.url,
     question,
-    stats: context.summary.stats
+    stats: context.summary.stats,
   });
 }
 
@@ -62,206 +71,164 @@ async function throttleGemini(): Promise<void> {
   lastGeminiRequestAt = Date.now();
 }
 
-async function seedAiSettingsFromEnv(): Promise<void> {
-  if (!BACKEND_GEMINI_API_KEY.trim()) return;
-
-  const aiSettings = await loadAiSettings();
-  // Only overwrite if backend key is valid format (AIza...)
-  if (BACKEND_GEMINI_API_KEY.startsWith("AIza")) {
-    await saveAiSettings({
-      ...aiSettings,
-      geminiApiKey: BACKEND_GEMINI_API_KEY.trim()
-    });
-  }
-}
-
-void seedAiSettingsFromEnv();
-
-async function smokeTestGemini(apiKey: string, model: string): Promise<void> {
-  const text = await callGemini(apiKey, model, 'Return {"ok":true}.', {
-    temperature: 0,
-    maxOutputTokens: 32,
-    timeout: 5000,
-    retries: 0
-  });
-
-  const result = JSON.parse(text) as { ok?: boolean };
-  if (!result.ok) {
-    throw new Error("Gemini returned an unexpected response.");
-  }
-}
-
 chrome.runtime.onInstalled.addListener(async () => {
   const settings = await loadSettings();
   const nextSettings = { ...DEFAULT_SETTINGS, ...settings };
-
   await saveSettings(nextSettings);
-  await seedAiSettingsFromEnv();
   chrome.action.setBadgeText({ text: nextSettings.enabled ? "ON" : "" });
   chrome.action.setBadgeBackgroundColor({ color: "#0f766e" });
 });
 
-chrome.runtime.onStartup.addListener(() => {
-  seedAiSettingsFromEnv().catch(() => undefined);
-});
-
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local") return;
-
-  const nextValue = changes["neuroadapt.settings"]?.newValue as typeof DEFAULT_SETTINGS | undefined;
+  const nextValue = changes["neuroadapt.settings"]?.newValue as
+    | typeof DEFAULT_SETTINGS
+    | undefined;
   if (!nextValue) return;
-
   chrome.action.setBadgeText({ text: nextValue.enabled ? "ON" : "" });
   chrome.action.setBadgeBackgroundColor({ color: "#0f766e" });
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (!message || typeof message !== "object" || !("type" in message)) {
-    return false;
-  }
+chrome.runtime.onMessage.addListener(
+  (rawMessage: unknown, _sender, sendResponse) => {
+    if (
+      !rawMessage ||
+      typeof rawMessage !== "object" ||
+      !("type" in rawMessage)
+    ) {
+      return false;
+    }
 
-  if (message.type === "NA_UPDATE_SETTINGS") {
-    (async () => {
-      const settings = await loadSettings();
-      await saveSettings({ ...settings, ...message.payload });
-      await seedAiSettingsFromEnv();
-      sendResponse({ ok: true });
-    })();
-    return true;
-  }
+    const message = rawMessage as NeuroAdaptMessage;
 
-  if (message.type === "NA_SAVE_AI_SETTINGS") {
-    (async () => {
-      await saveAiSettings(message.payload);
-      sendResponse({ ok: true });
-    })();
-    return true;
-  }
+    if (message.type === "NA_UPDATE_SETTINGS") {
+      const msg = message as UpdateMsg;
+      (async () => {
+        const settings = await loadSettings();
+        await saveSettings({ ...settings, ...msg.payload });
+        sendResponse({ ok: true });
+      })();
+      return true;
+    }
 
-  if (message.type === "NA_GET_AI_SETTINGS") {
-    (async () => {
-      const settings = await loadAiSettings();
-      sendResponse({
-        ...settings,
-        geminiApiKey: settings.geminiApiKey ? "********" : ""
-      });
-    })();
-    return true;
-  }
-
-  if (message.type === "NA_RUN_GEMINI_ANALYSIS") {
-    (async () => {
-      try {
-        const key = cacheKey(message);
-        const cached = analysisCache.get(key);
-        if (cached && Date.now() - cached.generatedAt < 5 * 60 * 1000) {
-          sendResponse({ ok: true, analysis: { ...cached, cached: true } } satisfies AiAnalysisMessage);
-          return;
-        }
-
-        await throttleGemini();
-        const aiSettings = await loadAiSettings();
-        const apiKey = (BACKEND_GEMINI_API_KEY && BACKEND_GEMINI_API_KEY.startsWith("AIza")) ? BACKEND_GEMINI_API_KEY : aiSettings.geminiApiKey;
-        if (!apiKey?.startsWith("AIza")) {
-          sendResponse({ ok: false, error: "No valid Gemini API key configured." } satisfies AiAnalysisMessage);
-          return;
-        }
-        const analysis = await analyzeWithGemini({
-          apiKey,
-          model: aiSettings.model,
-          summary: message.payload.summary,
-          preferredPersona: message.payload.preferredPersona,
-          question: message.payload.question
-        });
-
-        analysisCache.set(key, analysis);
-        trimCache(analysisCache as Map<string, unknown>, CACHE_MAX_SIZE);
-        sendResponse({ ok: true, analysis } satisfies AiAnalysisMessage);
-      } catch (error) {
-        const messageText = error instanceof Error ? error.message : "Gemini analysis failed.";
-        sendResponse({ ok: false, error: messageText } satisfies AiAnalysisMessage);
-      }
-    })();
-    return true;
-  }
-
-  if (message.type === "NA_RUN_TASK_ASSISTANT") {
-    (async () => {
-      try {
-        const key = taskCacheKey(message);
-        if (key) {
-          const cached = taskAssistantCache.get(key);
-          if (cached && Date.now() - cached.generatedAt < 2 * 60 * 1000) {
-            sendResponse({ ok: true, result: { ...cached, cached: true } } satisfies TaskAssistantMessage);
+    if (message.type === "NA_RUN_ANALYSIS") {
+      const msg = message as AnalysisMsg;
+      (async () => {
+        try {
+          const key = cacheKey(msg);
+          const cached = analysisCache.get(key);
+          if (cached && Date.now() - cached.generatedAt < 5 * 60 * 1000) {
+            sendResponse({
+              ok: true,
+              analysis: { ...cached, cached: true },
+            } satisfies AiAnalysisMessage);
             return;
           }
-        }
 
-        await throttleGemini();
-        const aiSettings = await loadAiSettings();
-        const apiKey = (BACKEND_GEMINI_API_KEY && BACKEND_GEMINI_API_KEY.startsWith("AIza")) ? BACKEND_GEMINI_API_KEY : aiSettings.geminiApiKey;
-        if (!apiKey?.startsWith("AIza")) {
-          sendResponse({ ok: false, error: "No valid Gemini API key configured." } satisfies TaskAssistantMessage);
-          return;
-        }
-        const signalKey = message.payload.signalKey || `task-${message.payload.context.summary.url}`;
-        const { signal, cleanup } = createAbortSignal(signalKey);
-        try {
-          const result = await analyzeTaskWithGemini({
-            apiKey,
-            model: aiSettings.model,
-            context: message.payload.context,
-            question: message.payload.question,
-            conversationHistory: message.payload.conversationHistory,
-            goalSession: message.payload.goalSession,
-            checklist: message.payload.checklist,
-            confusionSignals: message.payload.confusionSignals,
-            signal
-          }, { allowHeuristicFallback: true });
-
-          if (key) {
-            taskAssistantCache.set(key, result);
-            trimCache(taskAssistantCache as Map<string, unknown>, CACHE_MAX_SIZE);
+          if (!BACKEND_GEMINI_API_KEY?.trim()) {
+            sendResponse({
+              ok: false,
+              error: "AI analysis unavailable. Backend API not yet configured.",
+            } satisfies AiAnalysisMessage);
+            return;
           }
-          sendResponse({ ok: true, result } satisfies TaskAssistantMessage);
-        } finally {
-          cleanup();
+
+          await throttleGemini();
+          const analysis = await analyzeWithGemini({
+            apiKey: BACKEND_GEMINI_API_KEY,
+            model: DEFAULT_MODEL,
+            summary: msg.payload.summary,
+            preferredPersona: msg.payload.preferredPersona,
+            question: msg.payload.question,
+          });
+
+          analysisCache.set(key, analysis);
+          trimCache(analysisCache as Map<string, unknown>, CACHE_MAX_SIZE);
+          sendResponse({ ok: true, analysis } satisfies AiAnalysisMessage);
+        } catch (error) {
+          const text =
+            error instanceof Error ? error.message : "AI analysis failed.";
+          sendResponse({ ok: false, error: text } satisfies AiAnalysisMessage);
         }
-      } catch (error) {
-        const messageText = error instanceof Error ? error.message : "Task assistant failed.";
-        sendResponse({ ok: false, error: messageText } satisfies TaskAssistantMessage);
-      }
-    })();
-    return true;
-  }
+      })();
+      return true;
+    }
 
-  if (message.type === "NA_GET_SETTINGS") {
-    (async () => {
-      sendResponse(await loadSettings());
-    })();
-    return true;
-  }
+    if (message.type === "NA_RUN_TASK_ASSISTANT") {
+      const msg = message as TaskMsg;
+      (async () => {
+        try {
+          const key = taskCacheKey(msg);
+          if (key) {
+            const cached = taskAssistantCache.get(key);
+            if (cached && Date.now() - cached.generatedAt < 2 * 60 * 1000) {
+              sendResponse({
+                ok: true,
+                result: { ...cached, cached: true },
+              } satisfies TaskAssistantMessage);
+              return;
+            }
+          }
 
-  if (message.type === "NA_VERIFY_BACKEND_KEY") {
-    (async () => {
-      const aiSettings = await loadAiSettings();
-      const apiKeyToUse = (BACKEND_GEMINI_API_KEY && BACKEND_GEMINI_API_KEY.startsWith("AIza")) ? BACKEND_GEMINI_API_KEY : aiSettings.geminiApiKey;
-      if (!apiKeyToUse || !apiKeyToUse.trim() || !apiKeyToUse.startsWith("AIza")) {
-        sendResponse({ ok: false, error: "No valid Gemini API key configured. Get a key from https://aistudio.google.com/apikey (format: AIza...)." });
-        return;
-      }
-      try {
-        await smokeTestGemini(apiKeyToUse, aiSettings.model);
-        sendResponse({ ok: true });
-      } catch (e) {
-        sendResponse({
-          ok: false,
-          error: e instanceof Error ? e.message : "Network error during verification."
-        });
-      }
-    })();
-    return true;
-  }
+          if (!BACKEND_GEMINI_API_KEY?.trim()) {
+            sendResponse({
+              ok: false,
+              error:
+                "AI assistant unavailable. Backend API not yet configured.",
+            } satisfies TaskAssistantMessage);
+            return;
+          }
 
-  return false;
-});
+          await throttleGemini();
+          const signalKey =
+            msg.payload.signalKey || `task-${msg.payload.context.summary.url}`;
+          const { signal, cleanup } = createAbortSignal(signalKey);
+          try {
+            const result = await analyzeTaskWithGemini(
+              {
+                apiKey: BACKEND_GEMINI_API_KEY,
+                model: DEFAULT_MODEL,
+                context: msg.payload.context,
+                question: msg.payload.question,
+                conversationHistory: msg.payload.conversationHistory,
+                goalSession: msg.payload.goalSession,
+                checklist: msg.payload.checklist,
+                confusionSignals: msg.payload.confusionSignals,
+                signal,
+              },
+              { allowHeuristicFallback: true },
+            );
+
+            if (key) {
+              taskAssistantCache.set(key, result);
+              trimCache(
+                taskAssistantCache as Map<string, unknown>,
+                CACHE_MAX_SIZE,
+              );
+            }
+            sendResponse({ ok: true, result } satisfies TaskAssistantMessage);
+          } finally {
+            cleanup();
+          }
+        } catch (error) {
+          const text =
+            error instanceof Error ? error.message : "Task assistant failed.";
+          sendResponse({
+            ok: false,
+            error: text,
+          } satisfies TaskAssistantMessage);
+        }
+      })();
+      return true;
+    }
+
+    if (message.type === "NA_GET_SETTINGS") {
+      (async () => {
+        sendResponse(await loadSettings());
+      })();
+      return true;
+    }
+
+    return false;
+  },
+);
