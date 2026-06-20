@@ -1,4 +1,4 @@
-import type { ChecklistItem, FormFieldGuide, TaskAssistantResult, DomAction } from "@/shared/types";
+import type { ChecklistItem, FormFieldGuide, TaskAssistantResult, DomAction, HighlightCandidate } from "@/shared/types";
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -74,6 +74,14 @@ export function parseTaskAssistantJson(text: string): unknown {
   return JSON.parse(candidate.slice(start, end + 1));
 }
 
+function candidateItem(value: unknown): HighlightCandidate | null {
+  const record = asRecord(value);
+  const ref = asString(record.ref);
+  const label = asString(record.label);
+  if (!ref && !label) return null;
+  return { ref, label: label || "Candidate", reason: asString(record.reason) };
+}
+
 export function validateTaskAssistantResult(value: unknown): Omit<TaskAssistantResult, "source" | "generatedAt" | "cached"> {
   const record = asRecord(value);
 
@@ -81,10 +89,16 @@ export function validateTaskAssistantResult(value: unknown): Omit<TaskAssistantR
     reply: asString(record.reply, "I can help you navigate this page. What would you like to do?"),
     highlightElementRef: asString(record.highlightElementRef) || undefined,
     highlightTooltip: asString(record.highlightTooltip) || undefined,
+    taskLabel: asString(record.taskLabel) || undefined,
+    safetyNote: asString(record.safetyNote) || undefined,
+    elementFound: record.elementFound === true ? true : record.elementFound === false ? false : undefined,
     checklist: asArray(record.checklist).map(checklistItem).filter((item) => item.label).slice(0, 8),
     formFields: asArray(record.formFields).map(formField).filter((item): item is FormFieldGuide => Boolean(item)).slice(0, 12),
     walkthroughStep: asString(record.walkthroughStep) || undefined,
     customCss: asString(record.customCss) || undefined,
-    domActions: asArray(record.domActions).map(domAction).filter((item): item is DomAction => Boolean(item))
+    domActions: asArray(record.domActions).map(domAction).filter((item): item is DomAction => Boolean(item)),
+    candidates: asArray(record.candidates).map(candidateItem).filter((item): item is HighlightCandidate => Boolean(item)).slice(0, 5),
+    estimatedTime: asString(record.estimatedTime) || undefined,
+    estimatedSteps: typeof record.estimatedSteps === "number" ? record.estimatedSteps : undefined
   };
 }

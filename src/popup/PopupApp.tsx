@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from "framer-motion";
+﻿import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowRight,
   Bot,
@@ -39,6 +39,8 @@ import { cx, Pill, ProgressBar, SectionTitle, SoftCard } from "@/shared/ui";
 import type { AiAnalysisMessage, NeuroAdaptStateMessage } from "@/shared/messaging";
 
 type BusyAction = "analyze" | "adapt" | "reset" | "testGemini" | null;
+
+const MASKED_API_KEY = "••••••••";
 
 function statusToneClass(kind: "info" | "success" | "warning" | "error"): string {
   switch (kind) {
@@ -120,6 +122,7 @@ export function PopupApp(): JSX.Element {
   const [backendStatus, setBackendStatus] = useState<"unknown" | "ok" | "error">("unknown");
   const [apiKey, setApiKey] = useState("");
   const [apiKeySaved, setApiKeySaved] = useState(false);
+  const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
 
 
   useEffect(() => {
@@ -130,8 +133,12 @@ export function PopupApp(): JSX.Element {
     });
     loadAiSettings().then((ai) => {
       if (!mounted) return;
-      // show masked key if already saved
-      if (ai.geminiApiKey) setApiKey("••••••••");
+      if (ai.geminiApiKey) {
+        setApiKey(MASKED_API_KEY);
+        setApiKeyConfigured(true);
+      } else {
+        setApiKeyConfigured(false);
+      }
     });
     return () => {
       mounted = false;
@@ -139,9 +146,10 @@ export function PopupApp(): JSX.Element {
   }, []);
 
   async function saveApiKey(): Promise<void> {
-    if (!apiKey || apiKey === "••••••••") return;
+    if (!apiKey || apiKey === MASKED_API_KEY) return;
     await saveAiSettings({ ...DEFAULT_AI_SETTINGS, geminiApiKey: apiKey.trim() });
-    setApiKey("••••••••");
+    setApiKey(MASKED_API_KEY);
+    setApiKeyConfigured(true);
     setApiKeySaved(true);
     setStatusMessage("API key saved.");
     setStatusTone("success");
@@ -153,7 +161,7 @@ export function PopupApp(): JSX.Element {
   }, [settings]);
 
   const selectedPersona = useMemo(
-    () => PERSONA_OPTIONS.find((persona) => persona.id === settings.persona) ?? PERSONA_OPTIONS[4],
+    () => PERSONA_OPTIONS.find((option) => option.id === settings.persona) ?? PERSONA_OPTIONS[0],
     [settings.persona]
   );
 
@@ -191,6 +199,11 @@ export function PopupApp(): JSX.Element {
       setBusyAction(null);
     }
   }
+
+  useEffect(() => {
+    if (!apiKeyConfigured || backendStatus !== "unknown") return;
+    void checkBackendConnection();
+  }, [apiKeyConfigured, backendStatus]);
 
   async function analyzeCurrentPage(): Promise<void> {
     setBusyAction("analyze");
@@ -446,24 +459,24 @@ export function PopupApp(): JSX.Element {
               <SoftCard className="space-y-3">
                 <SectionTitle
                   title="Gemini API Key"
-                  subtitle="Paste your key once — it's stored locally in Chrome."
+                  subtitle={apiKeyConfigured ? "Gemini is configured and will run automatically from your stored key." : "Paste your key once - it's stored locally in Chrome."}
                 />
                 <div className="flex items-center gap-2">
                   <input
                     type="password"
                     value={apiKey}
                     onChange={(e) => { setApiKey(e.currentTarget.value); setApiKeySaved(false); }}
-                    onFocus={(e) => { if (apiKey === "••••••••") { setApiKey(""); } }}
+                    onFocus={() => { if (apiKey === MASKED_API_KEY) { setApiKey(""); setApiKeyConfigured(false); } }}
                     placeholder="AIza..."
                     className="flex-1 rounded-xl border border-sky-200 bg-white px-3 py-2 text-xs font-mono text-slate-800 outline-none focus:ring-2 focus:ring-cyan-400/60"
                   />
                   <button
                     type="button"
                     onClick={saveApiKey}
-                    disabled={!apiKey || apiKey === "••••••••"}
+                    disabled={!apiKey || apiKey === MASKED_API_KEY}
                     className="inline-flex items-center gap-1 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-50"
                   >
-                    {apiKeySaved ? "Saved ✓" : "Save"}
+                    {apiKeySaved ? "Saved ✓" : apiKeyConfigured ? "Configured" : "Save"}
                   </button>
                 </div>
 
@@ -471,7 +484,7 @@ export function PopupApp(): JSX.Element {
                   <div className="flex-1">
                     <p className="text-xs font-semibold text-slate-700">
                       Connection:{" "}
-                      {backendStatus === "unknown" ? <span className="text-slate-400">Not verified</span> : backendStatus === "ok" ? <span className="text-emerald-600 font-bold">Connected ✓</span> : <span className="text-rose-600 font-bold">Error ✗</span>}
+                      {backendStatus === "unknown" ? <span className="text-slate-400">Not verified</span> : backendStatus === "ok" ? <span className="text-emerald-600 font-bold">Connected âœ“</span> : <span className="text-rose-600 font-bold">Error âœ—</span>}
                     </p>
                   </div>
                   <button
@@ -489,7 +502,7 @@ export function PopupApp(): JSX.Element {
               <SoftCard className="space-y-3">
                 <SectionTitle title="Persona" subtitle="Who is this page being adapted for?" />
                 <div className="flex gap-2">
-                  {PERSONA_OPTIONS.filter((p) => p.id === "elderly" || p.id === "firstTime").map((p) => (
+                  {PERSONA_OPTIONS.filter((p) => p.id === "elderly" || p.id === "firstTime" || p.id === "taskHelper").map((p) => (
                     <button
                       key={p.id}
                       type="button"
@@ -500,7 +513,7 @@ export function PopupApp(): JSX.Element {
                           : "border-sky-200 bg-white text-slate-700 hover:bg-sky-50"
                       }`}
                     >
-                      <div className="text-base">{p.id === "elderly" ? "👴" : "🆕"}</div>
+                      <div className="text-base">{p.id === "elderly" ? "ðŸ‘´" : p.id === "taskHelper" ? "ðŸ§­" : "ðŸ†•"}</div>
                       <div className="mt-0.5">{p.badge}</div>
                     </button>
                   ))}
@@ -513,7 +526,7 @@ export function PopupApp(): JSX.Element {
                         : "border-sky-200 bg-white text-slate-700 hover:bg-sky-50"
                     }`}
                   >
-                    <div className="text-base">🤖</div>
+                    <div className="text-base">ðŸ¤–</div>
                     <div className="mt-0.5">Auto</div>
                   </button>
                 </div>
@@ -575,3 +588,7 @@ export function PopupApp(): JSX.Element {
 
   return body;
 }
+
+
+
+

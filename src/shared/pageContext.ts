@@ -1,5 +1,6 @@
 import { extractPageSummary } from "@/shared/pageSummary";
 import type { ExtractedElement, PageSummary, PersonaId } from "@/shared/types";
+import { queryDeepAll, queryDeepFirst } from "@/shared/shadowDom";
 
 const INTERACTIVE_SELECTOR = [
   "button",
@@ -50,8 +51,9 @@ function labelFor(element: Element, root: Document): string {
     .join(" ");
 
   const forLabel =
-    element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement
-      ? root.querySelector<HTMLLabelElement>(`label[for="${element.id}"]`)?.textContent
+    element.id &&
+    (element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement)
+      ? queryDeepFirst<HTMLLabelElement>(`label[for="${element.id}"]`, root)?.textContent
       : null;
 
   return clampText(
@@ -118,10 +120,23 @@ function extractContextElement(element: HTMLElement, index: number, root: Docume
   };
 }
 
+export function getActiveContextElement(root: Document = document): ContextElement | null {
+  const active = root.activeElement;
+  if (!active || !(active instanceof HTMLElement)) return null;
+  const existingRef = active.getAttribute("data-neuroadapt-ref");
+  if (existingRef) {
+    return {
+      ...extractContextElement(active, -1, root),
+      ref: existingRef
+    };
+  }
+  return extractContextElement(active, 0, root);
+}
+
 export function extractPageContext(root: Document = document, persona: PersonaId = "auto"): PageContext {
   const summary = extractPageSummary(root);
 
-  const interactive = Array.from(root.querySelectorAll<HTMLElement>(INTERACTIVE_SELECTOR)).filter(visible).slice(0, 120);
+  const interactive = queryDeepAll<HTMLElement>(INTERACTIVE_SELECTOR, root).filter(visible).slice(0, 120);
   const elements = interactive.map((element, index) => extractContextElement(element, index, root));
 
   return { summary, elements, persona };
@@ -161,6 +176,6 @@ export function compactPageContext(context: PageContext): string {
 }
 
 export function findElementByRef(root: Document, ref: string): HTMLElement | null {
-  const element = root.querySelector<HTMLElement>(`[data-neuroadapt-ref="${ref}"]`);
+  const element = queryDeepFirst<HTMLElement>(`[data-neuroadapt-ref="${ref}"]`, root);
   return element && visible(element) ? element : null;
 }

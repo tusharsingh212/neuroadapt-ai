@@ -1,4 +1,5 @@
 import type { ExtractedElement, PageSummary } from "@/shared/types";
+import { collectSearchRoots, type SearchRoot } from "@/shared/shadowDom";
 
 const INTERACTIVE_SELECTOR = [
   "button",
@@ -99,16 +100,75 @@ function average(values: number[]): number {
   return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10;
 }
 
-function meta(root: Document): Record<string, string> {
-  const entries = Array.from(root.querySelectorAll<HTMLMetaElement>("meta[name], meta[property]"))
+type QueryAll = <E extends Element = Element>(selector: string) => E[];
+
+function buildQueryAll(searchRoots: SearchRoot[]): QueryAll {
+  return <E extends Element = Element>(selector: string): E[] => {
+    const results: E[] = [];
+    for (const r of searchRoots) {
+      try {
+        results.push(...Array.from(r.querySelectorAll<E>(selector)));
+      } catch {
+        // Invalid selector for this root, or root became inaccessible - skip it.
+      }
+    }
+    return results;
+  };
+}
+
+function meta(queryAll: QueryAll): Record<string, string> {
+  const entries = queryAll<HTMLMetaElement>("meta[name], meta[property]")
     .map((node) => [node.name || node.getAttribute("property") || "", clampText(node.content, 220)] as const)
     .filter(([name, content]) => name && content)
     .slice(0, 16);
   return Object.fromEntries(entries);
 }
 
+function computeNavDepth(queryAll: QueryAll): number {
+  let maxDepth = 0;
+  const navs = queryAll("nav, [role='navigation']");
+  navs.forEach((nav) => {
+    const items = nav.querySelectorAll("a, button, [role='link'], [role='button']");
+    items.forEach((item) => {
+      let depth = 0;
+      let parent = item.parentElement;
+      while (parent && parent !== nav) {
+        if (parent.matches("li, ul, ol, div")) depth++;
+        parent = parent.parentElement;
+      }
+      if (depth > maxDepth) maxDepth = depth;
+    });
+  });
+  return maxDepth;
+}
+
+function computeHeadingGaps(hs: Array<{ level: number; text: string }>): number[] {
+  const gaps: number[] = [];
+  for (let i = 1; i < hs.length; i++) {
+    const diff = hs[i].level - hs[i - 1].level;
+    if (diff > 1) gaps.push(hs[i - 1].level);
+  }
+  return [...new Set(gaps)];
+}
+
 export function extractPageSummary(root: Document = document): PageSummary {
-  const headings = Array.from(root.querySelectorAll("h1, h2, h3, h4, h5, h6"))
+  // Discover every reachable open shadow root once and reuse it across all the selector
+  // queries below, instead of re-walking the composed tree ~10 times per call.
+  const searchRoots = collectSearchRoots(root);
+  const queryAll = buildQueryAll(searchRoots);
+  const queryFirst = <E extends Element = Element>(selector: string): E | null => {
+    for (const r of searchRoots) {
+      try {
+        const found = r.querySelector<E>(selector);
+        if (found) return found;
+      } catch {
+        // ignore and keep searching other roots
+      }
+    }
+    return null;
+  };
+
+  const headings = queryAll("h1, h2, h3, h4, h5, h6")
     .filter(visible)
     .map((heading) => ({
       level: Number(heading.tagName.slice(1)),
@@ -117,9 +177,9 @@ export function extractPageSummary(root: Document = document): PageSummary {
     .filter((heading) => heading.text)
     .slice(0, 40);
 
-  const interactiveElements = Array.from(root.querySelectorAll(INTERACTIVE_SELECTOR)).filter(visible).slice(0, 160);
+  const interactiveElements = queryAll(INTERACTIVE_SELECTOR).filter(visible).slice(0, 160);
   const extractedInteractive = interactiveElements.map(extractElement);
-  const textBlocks = Array.from(root.querySelectorAll<HTMLElement>("p, li, td, th, label, article, section"))
+  const textBlocks = queryAll<HTMLElement>("p, li, td, th, label, article, section")
     .filter(visible)
     .map((node) => ({
       text: clampText(node.textContent ?? "", 240),
@@ -129,7 +189,7 @@ export function extractPageSummary(root: Document = document): PageSummary {
     .filter((block) => block.text.length > 35)
     .slice(0, 60);
 
-  const forms = Array.from(root.querySelectorAll("form"))
+  const forms = queryAll("form")
     .filter(visible)
     .slice(0, 20)
     .map((form) => ({
@@ -138,7 +198,7 @@ export function extractPageSummary(root: Document = document): PageSummary {
       buttons: Array.from(form.querySelectorAll("button, input[type='submit'], [role='button']")).filter(visible).slice(0, 12).map(extractElement)
     }));
 
-  const tables = Array.from(root.querySelectorAll("table"))
+  const tables = queryAll("table")
     .filter(visible)
     .slice(0, 20)
     .map((table) => ({
@@ -152,16 +212,19 @@ export function extractPageSummary(root: Document = document): PageSummary {
     .filter((ratio): ratio is number => typeof ratio === "number")
     .filter((ratio) => ratio < 4.5).length;
 
+  const headingGaps = computeHeadingGaps(headings);
+  const navDepth = computeNavDepth(queryAll);
+
   return {
     title: root.title || "Untitled Page",
     url: root.location?.href ?? "",
     language: root.documentElement.lang || "unknown",
-    description: root.querySelector<HTMLMetaElement>("meta[name='description']")?.content ?? "",
-    metadata: meta(root),
+    description: queryFirst<HTMLMetaElement>("meta[name='description']")?.content ?? "",
+    metadata: meta(queryAll),
     headings,
-    navigation: Array.from(root.querySelectorAll("nav a[href], header a[href], aside a[href]")).filter(visible).slice(0, 50).map(extractElement),
-    links: Array.from(root.querySelectorAll("a[href]")).filter(visible).slice(0, 80).map(extractElement),
-    buttons: Array.from(root.querySelectorAll("button, [role='button'], input[type='button'], input[type='submit']")).filter(visible).slice(0, 80).map(extractElement),
+    navigation: queryAll("nav a[href], header a[href], aside a[href]").filter(visible).slice(0, 50).map(extractElement),
+    links: queryAll("a[href]").filter(visible).slice(0, 80).map(extractElement),
+    buttons: queryAll("button, [role='button'], input[type='button'], input[type='submit']").filter(visible).slice(0, 80).map(extractElement),
     forms,
     tables,
     textBlocks,
@@ -169,7 +232,7 @@ export function extractPageSummary(root: Document = document): PageSummary {
     stats: {
       interactiveCount: interactiveElements.length,
       smallTargetCount: extractedInteractive.filter((item) => item.smallTarget).length,
-      navCount: root.querySelectorAll("nav, header nav, aside nav").length,
+      navCount: queryAll("nav, header nav, aside nav").length,
       formCount: forms.length,
       textBlockCount: textBlocks.length,
       averageFontSize: average(fontSizes),

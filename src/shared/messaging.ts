@@ -1,14 +1,6 @@
 import type {
-  AnalysisReport,
-  AiAnalysisResult,
-  AiSettings,
-  ChatMessage,
-  ExtensionSettings,
-  PageInsights,
-  PageSummary,
-  PersonaId,
-  RuntimeStatus,
-  TaskAssistantResult
+  AnalysisReport, AiAnalysisResult, AiSettings, ChatMessage, ChecklistItem, ExtensionSettings,
+  GoalSession, OverlaySettings, PageInsights, PageSummary, PersonaId, RuntimeStatus, TaskAssistantResult, ConfusionSignal
 } from "@/shared/types";
 import type { PageContext } from "@/shared/pageContext";
 
@@ -26,15 +18,26 @@ export type NeuroAdaptMessage =
         context: PageContext;
         question: string;
         conversationHistory?: ChatMessage[];
-        walkthroughMode?: boolean;
-        walkthroughStepIndex?: number;
+        goalSession?: GoalSession | null;
+        checklist?: ChecklistItem[];
+        confusionSignals?: ConfusionSignal[];
+        signalKey?: string;
       };
     }
   | { type: "NA_ANALYZE_PAGE" }
   | { type: "NA_ADAPT_PAGE"; payload?: { persona?: PersonaId } }
   | { type: "NA_RESET_PAGE" }
   | { type: "NA_SET_COMPARISON"; payload: { mode: "original" | "adapted" } }
-  | { type: "NA_SHOW_STATUS"; payload: { message: string; tone?: "info" | "success" | "warning" } };
+  | { type: "NA_SHOW_STATUS"; payload: { message: string; tone?: "info" | "success" | "warning" } }
+  | { type: "NA_GOAL_INIT"; payload: { goal: string; steps: string[]; estimatedTime?: string; estimatedSteps?: number } }
+  | { type: "NA_GOAL_START" }
+  | { type: "NA_GOAL_PAUSE" }
+  | { type: "NA_GOAL_RESUME" }
+  | { type: "NA_GOAL_RESTART" }
+  | { type: "NA_GOAL_CANCEL" }
+  | { type: "NA_OVERLAY_TOGGLE"; payload: { mode: string; enabled: boolean } }
+  | { type: "NA_OVERLAY_GET" }
+  | { type: "NA_OVERLAY_RESET" };
 
 export interface NeuroAdaptStateMessage {
   settings: ExtensionSettings;

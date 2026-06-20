@@ -1,6 +1,8 @@
 export type PersonaId =
   | "elderly"
-  | "firstTime";
+  | "firstTime"
+  | "taskHelper"
+  | "auto";
 
 export type ComparisonMode = "original" | "adapted";
 
@@ -17,17 +19,24 @@ export interface PersonaOption {
 export const PERSONA_OPTIONS: PersonaOption[] = [
   {
     id: "elderly",
-    label: "👴 Elderly User",
+    label: "Elderly User",
     badge: "Comfort",
     description: "Larger text, clearer hierarchy, and simpler interactions.",
     accent: "from-amber-400 to-orange-500"
   },
   {
     id: "firstTime",
-    label: "🌱 First-Time Internet User",
+    label: "First-Time Internet User",
     badge: "Guidance",
     description: "Step-by-step hints and gentle reduction of clutter.",
     accent: "from-emerald-400 to-teal-500"
+  },
+  {
+    id: "taskHelper",
+    label: "Task Helper User",
+    badge: "Locator",
+    description: "Find the feature and complete the task with guided steps.",
+    accent: "from-sky-400 to-cyan-500"
   }
 ];
 
@@ -135,6 +144,35 @@ export interface FormFieldGuide {
   expectedFormat?: string;
 }
 
+export type GoalSessionStatus = "preview" | "active" | "paused" | "completed" | "cancelled";
+
+export interface GoalSession {
+  id: string;
+  goal: string;
+  status: GoalSessionStatus;
+  checklist: ChecklistItem[];
+  startedAt: number;
+  lastUpdatedAt: number;
+  confidence: number;
+  estimatedSteps: number;
+  estimatedTimeLabel: string;
+  pageUrl: string;
+}
+
+export interface HighlightCandidate {
+  ref: string;
+  label: string;
+  reason: string;
+}
+
+export interface TaskState {
+  activeTask: string | null;
+  checklist: ChecklistItem[];
+  startedAt: number;
+  lastUpdatedAt: number;
+  pageUrl: string;
+}
+
 export interface TaskAssistantResult {
   reply: string;
   highlightElementRef?: string;
@@ -147,6 +185,41 @@ export interface TaskAssistantResult {
   source: "gemini" | "heuristic";
   generatedAt: number;
   cached?: boolean;
+  taskLabel?: string;
+  safetyNote?: string;
+  elementFound?: boolean;
+  candidates?: HighlightCandidate[];
+  goalSession?: GoalSession;
+  estimatedTime?: string;
+  estimatedSteps?: number;
+}
+
+export type OverlayMode =
+  | "focusMode"
+  | "readingMode"
+  | "reducedClutter"
+  | "largeTargets"
+  | "highContrast"
+  | "dyslexiaSpacing"
+  | "simplifiedLabels";
+
+export type OverlaySettings = Record<OverlayMode, boolean>;
+
+export const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = {
+  focusMode: false,
+  readingMode: false,
+  reducedClutter: false,
+  largeTargets: false,
+  highContrast: false,
+  dyslexiaSpacing: false,
+  simplifiedLabels: false
+};
+
+export interface ConfusionSignal {
+  type: "repeatClick" | "scrollBurst" | "failedInteraction" | "longPause" | "hoverHesitation" | "menuFlicker";
+  severity: "low" | "medium" | "high";
+  suggestion: string;
+  timestamp: number;
 }
 
 export interface DomAction {
@@ -173,6 +246,17 @@ export interface AiAnalysisResult {
   generatedAt: number;
 }
 
+export interface AccessibilityDetail {
+  tinyClickTargets: number;
+  denseLayoutScore: number;
+  navTreeDepth: number;
+  longForms: number;
+  missingLabels: number;
+  ambiguousButtons: number;
+  excessiveScroll: boolean;
+  headingGaps: number[];
+}
+
 export interface PageInsights {
   title: string;
   url: string;
@@ -187,6 +271,7 @@ export interface PageInsights {
   complexityScore: number;
   detectedPersona: PersonaId;
   summary: string;
+  accessibilityDetail: AccessibilityDetail;
 }
 
 export interface MetricsSnapshot {
@@ -225,10 +310,13 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
 
 export const PERSONA_LABELS: Record<PersonaId, string> = {
   elderly: "Elderly User",
-  firstTime: "First-Time Internet User"
+  firstTime: "First-Time Internet User",
+  taskHelper: "Task Helper User",
+  auto: "Auto Detect"
 };
 
 export const PERSONA_GUIDANCE: Record<Exclude<PersonaId, "auto">, string[]> = {
   elderly: ["Increase text size", "Increase button size", "Reduce visual clutter"],
-  firstTime: ["Step-by-step hints", "Contextual tooltips", "Hide secondary actions"]
+  firstTime: ["Step-by-step hints", "Contextual tooltips", "Hide secondary actions"],
+  taskHelper: ["Find the exact feature", "Show the next action", "Keep guidance short and visible"]
 };
