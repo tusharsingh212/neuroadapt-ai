@@ -1,17 +1,18 @@
+// Phase 2 note: NA_RUN_ANALYSIS and NA_RUN_TASK_ASSISTANT will be routed through
+// the backend API instead of calling Gemini directly. See src/shared/apiClient.ts.
+
 import type {
-  AnalysisReport, AiAnalysisResult, AiSettings, ChatMessage, ChecklistItem, ExtensionSettings,
-  GoalSession, OverlaySettings, PageInsights, PageSummary, PersonaId, RuntimeStatus, TaskAssistantResult, ConfusionSignal
+  AnalysisReport, AiAnalysisResult, ChatMessage, ChecklistItem, ExtensionSettings,
+  GoalSession, PageInsights, PageSummary, PersonaId, RuntimeStatus,
+  TaskAssistantResult, ConfusionSignal
 } from "@/shared/types";
 import type { PageContext } from "@/shared/pageContext";
 
 export type NeuroAdaptMessage =
   | { type: "NA_GET_STATE" }
   | { type: "NA_GET_SETTINGS" }
-  | { type: "NA_GET_AI_SETTINGS" }
   | { type: "NA_UPDATE_SETTINGS"; payload: Partial<ExtensionSettings> }
-  | { type: "NA_SAVE_AI_SETTINGS"; payload: AiSettings }
-  | { type: "NA_VERIFY_BACKEND_KEY" }
-  | { type: "NA_RUN_GEMINI_ANALYSIS"; payload: { summary: PageSummary; preferredPersona: PersonaId; question?: string } }
+  | { type: "NA_RUN_ANALYSIS"; payload: { summary: PageSummary; preferredPersona: PersonaId; question?: string } }
   | {
       type: "NA_RUN_TASK_ASSISTANT";
       payload: {

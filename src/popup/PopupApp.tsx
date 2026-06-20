@@ -1,46 +1,31 @@
-﻿import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowRight,
-  Bot,
   ChevronDown,
   ChevronUp,
   ExternalLink,
-  Gauge,
   Loader2,
-  HeartPulse,
-  Eye,
   RotateCcw,
   ScanSearch,
   ShieldCheck,
-  Sparkles,
-  Volume2
+  Sparkles
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { applyAdaptation, buildAdaptationSummary, resetAdaptation } from "@/shared/adaptation";
-import { asErrorMessage, injectContentScriptIfNeeded, queryActiveTab, sendRuntimeMessage, sendToActiveTab } from "@/shared/chrome";
-import { buildAnalysisReport, inspectPage } from "@/shared/pageInsights";
-import { formatTaskTime } from "@/shared/metrics";
+import { resetAdaptation } from "@/shared/adaptation";
+import { asErrorMessage, injectContentScriptIfNeeded, queryActiveTab, sendToActiveTab } from "@/shared/chrome";
 import {
   DEFAULT_SETTINGS,
   PERSONA_LABELS,
   PERSONA_OPTIONS,
-  type AnalysisReport,
-  type AiSettings,
-  type ExtensionSettings,
-  type PageSummary,
-  type PageInsights,
-  type PersonaId
+  type ExtensionSettings
 } from "@/shared/types";
-import { DEFAULT_AI_SETTINGS } from "@/shared/types";
-import { loadAiSettings, loadSettings, saveAiSettings, saveSettings } from "@/shared/storage";
-import { cx, Pill, ProgressBar, SectionTitle, SoftCard } from "@/shared/ui";
+import { loadSettings, saveSettings } from "@/shared/storage";
+import { Pill, SectionTitle, SoftCard } from "@/shared/ui";
 
-import type { AiAnalysisMessage, NeuroAdaptStateMessage } from "@/shared/messaging";
+import type { NeuroAdaptStateMessage } from "@/shared/messaging";
 
-type BusyAction = "analyze" | "adapt" | "reset" | "testGemini" | null;
-
-const MASKED_API_KEY = "••••••••";
+type BusyAction = "analyze" | "adapt" | "reset" | null;
 
 function statusToneClass(kind: "info" | "success" | "warning" | "error"): string {
   switch (kind) {
@@ -55,187 +40,48 @@ function statusToneClass(kind: "info" | "success" | "warning" | "error"): string
   }
 }
 
-function formatPersonaLabel(persona: PersonaId, detectedPersona?: PersonaId): string {
-  if (persona === "auto" && detectedPersona) return `${PERSONA_LABELS[persona]} -> ${PERSONA_LABELS[detectedPersona]}`;
-  return PERSONA_LABELS[persona];
-}
-
-function createGeminiSmokeTestSummary(): PageSummary {
-  return {
-    title: "NeuroAdapt Gemini Smoke Test",
-    url: "chrome-extension://neuroadapt/smoke-test",
-    language: "en",
-    description: "Synthetic page summary used to verify Gemini integration.",
-    metadata: {},
-    headings: [{ level: 1, text: "Patient appointment portal" }],
-    navigation: [{ label: "Home", role: "link", tag: "a", smallTarget: false }],
-    links: [{ label: "Insurance help", role: "link", tag: "a", smallTarget: true }],
-    buttons: [
-      { label: "Schedule appointment", role: "button", tag: "button", smallTarget: false },
-      { label: "Submit form", role: "button", tag: "button", smallTarget: false }
-    ],
-    forms: [
-      {
-        label: "Appointment request",
-        fields: [
-          { label: "Patient name", role: "textbox", tag: "input", type: "text", smallTarget: false },
-          { label: "Date of birth", role: "textbox", tag: "input", type: "date", smallTarget: false }
-        ],
-        buttons: [{ label: "Continue", role: "button", tag: "button", smallTarget: false }]
-      }
-    ],
-    tables: [],
-    textBlocks: [
-      {
-        text: "Users must choose a clinic, fill out several required fields, and continue to confirmation.",
-        fontSize: 14,
-        contrastRatio: 3.8
-      }
-    ],
-    interactiveElements: [
-      { label: "Schedule appointment", role: "button", tag: "button", smallTarget: false },
-      { label: "Continue", role: "button", tag: "button", smallTarget: false },
-      { label: "Insurance help", role: "link", tag: "a", smallTarget: true }
-    ],
-    stats: {
-      interactiveCount: 3,
-      smallTargetCount: 1,
-      navCount: 1,
-      formCount: 1,
-      textBlockCount: 1,
-      averageFontSize: 14,
-      lowContrastCount: 1,
-      bodyTextLength: 220
-    }
-  };
-}
-
 export function PopupApp(): JSX.Element {
   const [settings, setSettings] = useState<ExtensionSettings>(DEFAULT_SETTINGS);
-  const [analysis, setAnalysis] = useState<AnalysisReport | null>(null);
-  const [insights, setInsights] = useState<PageInsights | null>(null);
   const [statusMessage, setStatusMessage] = useState("Ready to adapt.");
   const [statusTone, setStatusTone] = useState<"info" | "success" | "warning" | "error">("info");
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [panelOpen, setPanelOpen] = useState(true);
-  const [localPreview, setLocalPreview] = useState<AnalysisReport | null>(null);
-  const [backendStatus, setBackendStatus] = useState<"unknown" | "ok" | "error">("unknown");
-  const [apiKey, setApiKey] = useState("");
-  const [apiKeySaved, setApiKeySaved] = useState(false);
-  const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
-
 
   useEffect(() => {
     let mounted = true;
     loadSettings().then((next) => {
-      if (!mounted) return;
-      setSettings(next);
+      if (mounted) setSettings(next);
     });
-    loadAiSettings().then((ai) => {
-      if (!mounted) return;
-      if (ai.geminiApiKey) {
-        setApiKey(MASKED_API_KEY);
-        setApiKeyConfigured(true);
-      } else {
-        setApiKeyConfigured(false);
-      }
-    });
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, []);
-
-  async function saveApiKey(): Promise<void> {
-    if (!apiKey || apiKey === MASKED_API_KEY) return;
-    await saveAiSettings({ ...DEFAULT_AI_SETTINGS, geminiApiKey: apiKey.trim() });
-    setApiKey(MASKED_API_KEY);
-    setApiKeyConfigured(true);
-    setApiKeySaved(true);
-    setStatusMessage("API key saved.");
-    setStatusTone("success");
-    setTimeout(() => setApiKeySaved(false), 2500);
-  }
 
   useEffect(() => {
     saveSettings(settings).catch(() => undefined);
   }, [settings]);
 
   const selectedPersona = useMemo(
-    () => PERSONA_OPTIONS.find((option) => option.id === settings.persona) ?? PERSONA_OPTIONS[0],
+    () => PERSONA_OPTIONS.find((p) => p.id === settings.persona) ?? PERSONA_OPTIONS[0],
     [settings.persona]
   );
 
-  const metrics = analysis ?? localPreview;
-
   async function persistSettings(next: ExtensionSettings, tone: typeof statusTone = "info"): Promise<void> {
     setSettings(next);
-    setStatusMessage(`Persona set to ${formatPersonaLabel(next.persona, insights?.detectedPersona)}`);
+    setStatusMessage(`Mode set to ${PERSONA_LABELS[next.persona]}`);
     setStatusTone(tone);
     await saveSettings(next);
   }
-
-  async function checkBackendConnection(): Promise<void> {
-    setBusyAction("testGemini");
-    setStatusMessage("Verifying backend Gemini connection...");
-    setStatusTone("info");
-
-    try {
-      const response = await sendRuntimeMessage<{ ok: boolean; error?: string }>({
-        type: "NA_VERIFY_BACKEND_KEY"
-      });
-
-      if (!response?.ok) {
-        throw new Error(response?.error || "No response returned.");
-      }
-
-      setStatusMessage("Backend connection verified.");
-      setStatusTone("success");
-      setBackendStatus("ok");
-    } catch (error) {
-      setStatusMessage(`Backend connection failed: ${asErrorMessage(error)}`);
-      setStatusTone("error");
-      setBackendStatus("error");
-    } finally {
-      setBusyAction(null);
-    }
-  }
-
-  useEffect(() => {
-    if (!apiKeyConfigured || backendStatus !== "unknown") return;
-    void checkBackendConnection();
-  }, [apiKeyConfigured, backendStatus]);
 
   async function analyzeCurrentPage(): Promise<void> {
     setBusyAction("analyze");
     setStatusMessage("Analyzing current page...");
     setStatusTone("info");
-
     try {
       const activeTab = await queryActiveTab();
-      if (!activeTab?.id) {
-        throw new Error("No active tab available.");
-      }
-
+      if (!activeTab?.id) throw new Error("No active tab available.");
       await injectContentScriptIfNeeded(activeTab.id);
-      const response = await sendToActiveTab<NeuroAdaptStateMessage>({
-        type: "NA_ANALYZE_PAGE"
-      });
-
-      if (response) {
-        setSettings(response.settings);
-        setAnalysis(response.analysis);
-        setInsights(response.insights);
-        setStatusMessage(`Analysis complete for ${response.insights.title}.`);
-        setStatusTone("success");
-        return;
-      }
-
-      const localInsights = inspectPage(document);
-      const localReport = buildAnalysisReport(settings, localInsights);
-      setInsights(localInsights);
-      setLocalPreview(localReport);
-      setStatusMessage("Preview analysis generated locally. Open a webpage for live adaptation.");
-      setStatusTone("warning");
+      const response = await sendToActiveTab<NeuroAdaptStateMessage>({ type: "NA_ANALYZE_PAGE" });
+      setStatusMessage(response ? `Analysis complete for ${response.insights.title}.` : "Analysis complete.");
+      setStatusTone("success");
     } catch (error) {
       setStatusMessage(`Analysis failed: ${asErrorMessage(error)}`);
       setStatusTone("error");
@@ -248,28 +94,13 @@ export function PopupApp(): JSX.Element {
     setBusyAction("adapt");
     setStatusMessage("Activating adaptive interface...");
     setStatusTone("info");
-
     const next = { ...settings, enabled: true, comparisonMode: "adapted" as const };
     await persistSettings(next, "success");
-
     try {
       const activeTab = await queryActiveTab();
-      if (!activeTab?.id) {
-        throw new Error("No active tab available.");
-      }
-
+      if (!activeTab?.id) throw new Error("No active tab available.");
       await injectContentScriptIfNeeded(activeTab.id);
-      const response = await sendToActiveTab<NeuroAdaptStateMessage>({
-        type: "NA_ADAPT_PAGE",
-        payload: { persona: next.persona }
-      });
-
-      if (response) {
-        setSettings(response.settings);
-        setAnalysis(response.analysis);
-        setInsights(response.insights);
-      }
-
+      await sendToActiveTab<NeuroAdaptStateMessage>({ type: "NA_ADAPT_PAGE", payload: { persona: next.persona } });
       setStatusMessage("Adaptive interface applied.");
       setStatusTone("success");
     } catch (error) {
@@ -284,29 +115,14 @@ export function PopupApp(): JSX.Element {
     setBusyAction("reset");
     setStatusMessage("Restoring original page state...");
     setStatusTone("info");
-
     const next = { ...settings, enabled: false, comparisonMode: "original" as const };
     await persistSettings(next, "warning");
-
     try {
       const activeTab = await queryActiveTab();
-      if (!activeTab?.id) {
-        throw new Error("No active tab available.");
-      }
-
+      if (!activeTab?.id) throw new Error("No active tab available.");
       await injectContentScriptIfNeeded(activeTab.id);
-      const response = await sendToActiveTab<NeuroAdaptStateMessage>({
-        type: "NA_RESET_PAGE"
-      });
-
-      if (response) {
-        setSettings(response.settings);
-        setAnalysis(response.analysis);
-        setInsights(response.insights);
-      } else {
-        resetAdaptation(document);
-      }
-
+      const response = await sendToActiveTab<NeuroAdaptStateMessage>({ type: "NA_RESET_PAGE" });
+      if (!response) resetAdaptation(document);
       setStatusMessage("Changes reset.");
       setStatusTone("success");
     } catch (error) {
@@ -317,91 +133,21 @@ export function PopupApp(): JSX.Element {
     }
   }
 
-  async function toggleEnabled(nextEnabled: boolean): Promise<void> {
-    const next: ExtensionSettings = {
-      ...settings,
-      enabled: nextEnabled,
-      comparisonMode: nextEnabled ? "adapted" : "original"
-    };
-    await persistSettings(next, nextEnabled ? "success" : "warning");
-    if (nextEnabled) {
-      await adaptInterface();
-    } else {
-      await resetChanges();
-    }
-  }
-
-  async function setComparisonMode(mode: "original" | "adapted"): Promise<void> {
-    const next = { ...settings, comparisonMode: mode };
-    await persistSettings(next, mode === "adapted" ? "success" : "warning");
-    try {
-      const activeTab = await queryActiveTab();
-      if (!activeTab?.id) {
-        throw new Error("No active tab available.");
-      }
-
-      await injectContentScriptIfNeeded(activeTab.id);
-      await sendToActiveTab({
-        type: "NA_SET_COMPARISON",
-        payload: { mode }
-      });
-    } catch {
-      // Dev fallback is handled locally by the content script or local preview.
-    }
-  }
-
   async function launchDemoPortal(): Promise<void> {
     if (typeof chrome !== "undefined" && chrome.runtime?.getURL) {
-      const url = chrome.runtime.getURL("demo.html");
-      window.open(url, "_blank", "noopener,noreferrer");
+      window.open(chrome.runtime.getURL("demo.html"), "_blank", "noopener,noreferrer");
       return;
     }
-
     window.open("/demo.html", "_blank", "noopener,noreferrer");
   }
 
-  async function speakSummary(): Promise<void> {
-    const text =
-      analysis?.observedChallenges.join(". ") ||
-      insights?.summary ||
-      "NeuroAdapt AI demo summary. Analyze a page to hear a page overview.";
-
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
-    setStatusMessage("Speaking page summary.");
-    setStatusTone("info");
-  }
-
-  const metricsCard = metrics
-    ? [
-        {
-          label: "Readability",
-          before: `${analysis ? analysis.before.readability : localPreview?.before.readability ?? 0}%`,
-          after: `${analysis ? analysis.after.readability : localPreview?.after.readability ?? 0}%`,
-          color: "from-cyan-400 to-emerald-400"
-        },
-        {
-          label: "Navigation complexity",
-          before: analysis ? analysis.before.navigationComplexity : localPreview?.before.navigationComplexity ?? "High",
-          after: analysis ? analysis.after.navigationComplexity : localPreview?.after.navigationComplexity ?? "Low",
-          color: "from-amber-400 to-orange-400"
-        },
-        {
-          label: "Estimated task time",
-          before: formatTaskTime(analysis ? analysis.before.estimatedTaskSeconds : localPreview?.before.estimatedTaskSeconds ?? 260),
-          after: formatTaskTime(analysis ? analysis.after.estimatedTaskSeconds : localPreview?.after.estimatedTaskSeconds ?? 75),
-          color: "from-rose-400 to-pink-400"
-        }
-      ]
-    : [];
-
-  const body = (
-    <main className="relative flex h-full min-h-[640px] w-[380px] flex-col overflow-hidden text-slate-950">
+  return (
+    <main className="relative flex h-full min-h-[480px] w-[380px] flex-col overflow-hidden text-slate-950">
       <div className="absolute inset-0 subtle-grid opacity-20" />
       <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-cyan-400 via-emerald-400 to-amber-400" />
+
       <div className="relative flex h-full flex-col gap-4 p-4">
+        {/* Header */}
         <motion.header
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
@@ -421,7 +167,7 @@ export function PopupApp(): JSX.Element {
             </div>
             <button
               type="button"
-              onClick={() => setPanelOpen((value) => !value)}
+              onClick={() => setPanelOpen((v) => !v)}
               className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-sky-200 bg-white text-slate-900 transition hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-cyan-400/60"
               aria-label={panelOpen ? "Collapse panel" : "Open panel"}
             >
@@ -456,100 +202,67 @@ export function PopupApp(): JSX.Element {
               transition={{ duration: 0.28 }}
               className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1"
             >
+              {/* Mode selector */}
               <SoftCard className="space-y-3">
                 <SectionTitle
-                  title="Gemini API Key"
-                  subtitle={apiKeyConfigured ? "Gemini is configured and will run automatically from your stored key." : "Paste your key once - it's stored locally in Chrome."}
+                  title="Who is using this?"
+                  subtitle="Choose the mode that fits the person using the browser."
                 />
-                <div className="flex items-center gap-2">
-                  <input
-                    type="password"
-                    value={apiKey}
-                    onChange={(e) => { setApiKey(e.currentTarget.value); setApiKeySaved(false); }}
-                    onFocus={() => { if (apiKey === MASKED_API_KEY) { setApiKey(""); setApiKeyConfigured(false); } }}
-                    placeholder="AIza..."
-                    className="flex-1 rounded-xl border border-sky-200 bg-white px-3 py-2 text-xs font-mono text-slate-800 outline-none focus:ring-2 focus:ring-cyan-400/60"
-                  />
-                  <button
-                    type="button"
-                    onClick={saveApiKey}
-                    disabled={!apiKey || apiKey === MASKED_API_KEY}
-                    className="inline-flex items-center gap-1 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-50"
-                  >
-                    {apiKeySaved ? "Saved ✓" : apiKeyConfigured ? "Configured" : "Save"}
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-4 pt-1">
-                  <div className="flex-1">
-                    <p className="text-xs font-semibold text-slate-700">
-                      Connection:{" "}
-                      {backendStatus === "unknown" ? <span className="text-slate-400">Not verified</span> : backendStatus === "ok" ? <span className="text-emerald-600 font-bold">Connected âœ“</span> : <span className="text-rose-600 font-bold">Error âœ—</span>}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={checkBackendConnection}
-                    disabled={busyAction !== null}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs font-extrabold text-cyan-900 transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-70"
-                  >
-                    {busyAction === "testGemini" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                    Verify
-                  </button>
-                </div>
-              </SoftCard>
-
-              <SoftCard className="space-y-3">
-                <SectionTitle title="Persona" subtitle="Who is this page being adapted for?" />
                 <div className="flex gap-2">
-                  {PERSONA_OPTIONS.filter((p) => p.id === "elderly" || p.id === "firstTime" || p.id === "taskHelper").map((p) => (
+                  {PERSONA_OPTIONS.map((p) => (
                     <button
                       key={p.id}
                       type="button"
                       onClick={() => persistSettings({ ...settings, persona: p.id })}
-                      className={`flex-1 rounded-2xl border px-3 py-2.5 text-xs font-bold transition ${
+                      className={`flex-1 rounded-2xl border px-3 py-3 text-xs font-bold transition ${
                         settings.persona === p.id
                           ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-800"
                           : "border-sky-200 bg-white text-slate-700 hover:bg-sky-50"
                       }`}
                     >
-                      <div className="text-base">{p.id === "elderly" ? "ðŸ‘´" : p.id === "taskHelper" ? "ðŸ§­" : "ðŸ†•"}</div>
-                      <div className="mt-0.5">{p.badge}</div>
+                      <div className="text-base">{p.id === "elderly" ? "👴" : "🆕"}</div>
+                      <div className="mt-1">{p.badge}</div>
+                      <div className="mt-0.5 text-[10px] font-normal leading-tight text-slate-500">
+                        {p.description}
+                      </div>
                     </button>
                   ))}
-                  <button
-                    type="button"
-                    onClick={() => persistSettings({ ...settings, persona: "auto" })}
-                    className={`flex-1 rounded-2xl border px-3 py-2.5 text-xs font-bold transition ${
-                      settings.persona === "auto"
-                        ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-800"
-                        : "border-sky-200 bg-white text-slate-700 hover:bg-sky-50"
-                    }`}
-                  >
-                    <div className="text-base">ðŸ¤–</div>
-                    <div className="mt-0.5">Auto</div>
-                  </button>
                 </div>
               </SoftCard>
 
+              {/* Quick actions */}
               <SoftCard className="space-y-3">
                 <SectionTitle title="Quick Actions" subtitle="Analyze and adapt the current page." />
                 <div className="flex flex-col gap-2">
-                  <button type="button" onClick={analyzeCurrentPage} disabled={busyAction !== null} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-sky-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-900 transition hover:bg-sky-50 disabled:opacity-60">
+                  <button
+                    type="button"
+                    onClick={analyzeCurrentPage}
+                    disabled={busyAction !== null}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-sky-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-900 transition hover:bg-sky-50 disabled:opacity-60"
+                  >
                     {busyAction === "analyze" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanSearch className="h-4 w-4" />}
                     Analyze Page
                   </button>
-                  <button type="button" onClick={adaptInterface} disabled={busyAction !== null} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 px-4 py-2.5 text-xs font-bold text-white transition hover:opacity-90 disabled:opacity-60">
+                  <button
+                    type="button"
+                    onClick={adaptInterface}
+                    disabled={busyAction !== null}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 px-4 py-2.5 text-xs font-bold text-white transition hover:opacity-90 disabled:opacity-60"
+                  >
                     {busyAction === "adapt" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
                     Adapt Interface
                   </button>
-                  <button type="button" onClick={resetChanges} disabled={busyAction !== null} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs font-bold text-rose-900 transition hover:bg-rose-100 disabled:opacity-60">
+                  <button
+                    type="button"
+                    onClick={resetChanges}
+                    disabled={busyAction !== null}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs font-bold text-rose-900 transition hover:bg-rose-100 disabled:opacity-60"
+                  >
                     {busyAction === "reset" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
                     Reset Changes
                   </button>
                 </div>
 
-                {/* Status bar */}
                 <div className={`mt-1 rounded-xl border px-3 py-2 text-xs font-semibold ${statusToneClass(statusTone)}`}>
                   {statusMessage}
                 </div>
@@ -585,10 +298,4 @@ export function PopupApp(): JSX.Element {
       </div>
     </main>
   );
-
-  return body;
 }
-
-
-
-

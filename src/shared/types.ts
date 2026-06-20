@@ -1,8 +1,6 @@
 export type PersonaId =
   | "elderly"
-  | "firstTime"
-  | "taskHelper"
-  | "auto";
+  | "firstTime";
 
 export type ComparisonMode = "original" | "adapted";
 
@@ -30,13 +28,6 @@ export const PERSONA_OPTIONS: PersonaOption[] = [
     badge: "Guidance",
     description: "Step-by-step hints and gentle reduction of clutter.",
     accent: "from-emerald-400 to-teal-500"
-  },
-  {
-    id: "taskHelper",
-    label: "Task Helper User",
-    badge: "Locator",
-    description: "Find the feature and complete the task with guided steps.",
-    accent: "from-sky-400 to-cyan-500"
   }
 ];
 
@@ -44,12 +35,6 @@ export interface ExtensionSettings {
   enabled: boolean;
   persona: PersonaId;
   comparisonMode: ComparisonMode;
-  autoDetect: boolean;
-}
-
-export interface AiSettings {
-  geminiApiKey: string;
-  model: string;
 }
 
 export interface ExtractedElement {
@@ -299,24 +284,15 @@ export interface RuntimeStatus {
 export const DEFAULT_SETTINGS: ExtensionSettings = {
   enabled: false,
   persona: "elderly",
-  comparisonMode: "adapted",
-  autoDetect: false
-};
-
-export const DEFAULT_AI_SETTINGS: AiSettings = {
-  geminiApiKey: "",
-  model: "gemini-1.5-flash"
+  comparisonMode: "adapted"
 };
 
 export const PERSONA_LABELS: Record<PersonaId, string> = {
   elderly: "Elderly User",
-  firstTime: "First-Time Internet User",
-  taskHelper: "Task Helper User",
-  auto: "Auto Detect"
+  firstTime: "First-Time Internet User"
 };
 
-export const PERSONA_GUIDANCE: Record<Exclude<PersonaId, "auto">, string[]> = {
+export const PERSONA_GUIDANCE: Record<PersonaId, string[]> = {
   elderly: ["Increase text size", "Increase button size", "Reduce visual clutter"],
-  firstTime: ["Step-by-step hints", "Contextual tooltips", "Hide secondary actions"],
-  taskHelper: ["Find the exact feature", "Show the next action", "Keep guidance short and visible"]
+  firstTime: ["Step-by-step hints", "Contextual tooltips", "Hide secondary actions"]
 };

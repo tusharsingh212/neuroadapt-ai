@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertCircle, CheckCircle2, Circle, Compass, Loader2, MessageCircle, Send, Sparkles } from "lucide-react";
+import { AlertCircle, ArrowRight, CheckCircle2, Circle, Compass, Loader2, MessageCircle, Send, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { sendRuntimeMessage } from "@/shared/chrome";
@@ -34,22 +34,21 @@ interface TaskAssistantPanelProps {
   onConfusion?: (signals: ConfusionSignal[]) => void;
 }
 
+const GENERAL_SUGGESTIONS = [
+  "Guide me through this page",
+  "What can I do here?",
+  "Help me fill this form",
+  "What should I click next?"
+];
+
 const FIRST_TIME_SUGGESTIONS = [
-  "Help me apply for Aadhaar",
+  "Guide me step by step",
   "What is this page for?",
   "What should I click next?",
-  "Guide me through this step by step"
+  "Help me apply on this page"
 ];
 
-const TASK_HELPER_SUGGESTIONS = [
-  "Help me register on this portal",
-  "Where is the feature I need?",
-  "How do I complete this task?",
-  "Take me to the right button"
-];
-
-function buildWelcomeMessage(isTaskHelperMode: boolean, isFirstTimeMode: boolean): string {
-  if (isTaskHelperMode) return 'Hi! I am your live task guide. Tell me what you need to do — like "Help me register" or "Help me apply."';
+function buildWelcomeMessage(isFirstTimeMode: boolean): string {
   if (isFirstTimeMode) return 'Hi! I am your live guide. Tell me what you want to do — like "Help me apply for Aadhaar" or "Help me book an appointment."';
   return 'Hi! I am your live guide. Tell me what you need — like "Help me apply" or "Walk me through this page."';
 }
@@ -117,17 +116,16 @@ function isPrimaryActionClick(target: HTMLElement): boolean {
 }
 
 export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, onConfusion }: TaskAssistantPanelProps): JSX.Element {
-  const resolvedPersona = settings.persona === "auto" ? persona : settings.persona;
-  const isFirstTimeMode = resolvedPersona === "firstTime" || resolvedPersona === "taskHelper";
-  const isTaskHelperMode = resolvedPersona === "taskHelper";
+  const resolvedPersona = settings.persona;
+  const isFirstTimeMode = resolvedPersona === "firstTime";
 
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([{ id: "welcome", role: "assistant", content: buildWelcomeMessage(isTaskHelperMode, isFirstTimeMode), timestamp: Date.now() }]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([{ id: "welcome", role: "assistant", content: buildWelcomeMessage(isFirstTimeMode), timestamp: Date.now() }]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [walkthroughMode, setWalkthroughMode] = useState(false);
   const [chatExpanded, setChatExpanded] = useState(true);
-  const [geminiReady, setGeminiReady] = useState<"checking" | "ready" | "missing">("checking");
+  const [aiReady, setAiReady] = useState(true);
   const [goalActive, setGoalActive] = useState(isActive());
   const [confusionSignals, setConfusionSignals] = useState<ConfusionSignal[]>([]);
 
@@ -139,24 +137,12 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
   const runAssistantRef = useRef<(...args: Parameters<typeof runAssistant>) => ReturnType<typeof runAssistant>>();
   const handleResponseRef = useRef<(...args: Parameters<typeof handleResponse>) => void>();
   const pageObserverRef = useRef<PageObserver | null>(null);
-
-  const verifyGemini = useCallback(async () => {
-    setGeminiReady("checking");
-    const response = await sendRuntimeMessage<{ ok: boolean }>({ type: "NA_VERIFY_BACKEND_KEY" });
-    setGeminiReady(response?.ok ? "ready" : "missing");
-    return response?.ok ?? false;
-  }, []);
+  const hasScanRef = useRef(false);
 
   useEffect(() => { checklistRef.current = checklist; }, [checklist]);
   useEffect(() => { chatMessagesRef.current = chatMessages; }, [chatMessages]);
   useEffect(() => { walkthroughRef.current = walkthroughMode; }, [walkthroughMode]);
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages, loading]);
-
-  useEffect(() => {
-    let mounted = true;
-    sendRuntimeMessage<{ ok: boolean }>({ type: "NA_VERIFY_BACKEND_KEY" }).then((response) => { if (mounted) setGeminiReady(response?.ok ? "ready" : "missing"); });
-    return () => { mounted = false; };
-  }, []);
 
   // Heuristic observer for confusion detection
   useEffect(() => {
@@ -238,7 +224,7 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
         return null;
       }
 
-      if (response.result.source === "gemini") setGeminiReady("ready");
+      if (response.result.source === "gemini") setAiReady(true);
 
       // Track goal session from Gemini response
       const result = response.result;
@@ -309,14 +295,6 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
       const trimmed = text.trim();
       if (!trimmed || loading) return;
 
-      if (geminiReady === "missing") {
-        const verified = await verifyGemini();
-        if (!verified) {
-          setChatMessages((prev) => [...prev, { id: createId(), role: "assistant", content: "I need a Gemini API key to answer questions. Open the NeuroAdapt popup, paste your key, and click Save.", timestamp: Date.now() }]);
-          return;
-        }
-      }
-
       const userMessage: ChatMessage = { id: createId(), role: "user", content: trimmed, timestamp: Date.now() };
       const history = [...chatMessages, userMessage];
       setChatMessages(history);
@@ -328,7 +306,7 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
         if (result) {
           handleResponse(result);
         } else {
-          setChatMessages((prev) => [...prev, { id: createId(), role: "assistant", content: "I could not reach Gemini right now. Check your API key and try again.", timestamp: Date.now() }]);
+          setChatMessages((prev) => [...prev, { id: createId(), role: "assistant", content: "I could not get an AI response right now. Using heuristic analysis instead.", timestamp: Date.now() }]);
         }
       } catch {
         setChatMessages((prev) => [...prev, { id: createId(), role: "assistant", content: "Something went wrong. Please try again.", timestamp: Date.now() }]);
@@ -336,15 +314,10 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
         setLoading(false);
       }
     },
-    [chatMessages, loading, runAssistant, handleResponse, geminiReady, verifyGemini]
+    [chatMessages, loading, runAssistant, handleResponse]
   );
 
   const startWalkthrough = useCallback(async () => {
-    if (geminiReady === "missing") {
-      const verified = await verifyGemini();
-      if (!verified) { onStatus?.("Add your Gemini API key in the NeuroAdapt popup to use walkthrough mode."); return; }
-    }
-
     setWalkthroughMode(true);
     onStatus?.("Walkthrough mode started.");
 
@@ -364,7 +337,35 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
     } finally {
       setLoading(false);
     }
-  }, [chatMessages, runAssistant, handleResponse, onStatus, geminiReady, verifyGemini, onGoalChange]);
+  }, [chatMessages, runAssistant, handleResponse, onStatus, onGoalChange]);
+
+  // Auto-scan: greet user with a 1-sentence page summary on first open
+  useEffect(() => {
+    if (hasScanRef.current) return;
+    hasScanRef.current = true;
+    const timer = setTimeout(async () => {
+      if (!runAssistantRef.current) return;
+      try {
+        setLoading(true);
+        const result = await runAssistantRef.current(
+          "In one sentence, what is this page for and what can I do here?",
+          chatMessagesRef.current,
+          true
+        );
+        if (result?.reply) {
+          setChatMessages((prev) => [
+            ...prev,
+            { id: "auto-scan", role: "assistant" as const, content: result.reply, timestamp: Date.now() }
+          ]);
+        }
+      } catch {
+        // silently ignore — welcome message alone is fine
+      } finally {
+        setLoading(false);
+      }
+    }, 1400);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Walkthrough cleanup on unmount
   useEffect(() => {
@@ -382,43 +383,43 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
       <div className="na-section-head">
         <div className="na-chat-title-row">
           <MessageCircle size={16} />
-          <span className="na-label" style={{ marginBottom: 0 }}>
-            {isTaskHelperMode ? "Task Helper" : isFirstTimeMode ? "First-Time Assistant" : "Task Assistant"}
-          </span>
-          {geminiReady === "ready" ? <span className="na-ai-badge na-ai-badge-live">Gemini</span> : geminiReady === "missing" ? <span className="na-ai-badge na-ai-badge-offline">No API key</span> : null}
+          <span className="na-label" style={{ marginBottom: 0 }}>AI Assistant</span>
+          {aiReady ? <span className="na-ai-badge na-ai-badge-live">AI</span> : null}
         </div>
-        <div className="na-chat-actions">
-          <button type="button" className={`na-button na-guide-btn ${walkthroughMode ? "na-guide-active" : ""}`} onClick={startWalkthrough} disabled={loading || walkthroughMode || geminiReady === "missing"} aria-label="Guide me through this page">
-            <Compass size={14} /><span>Guide Me</span>
-          </button>
-          <button type="button" className="na-button na-secondary" onClick={() => setChatExpanded((v) => !v)} aria-expanded={chatExpanded} aria-label={chatExpanded ? "Collapse chat" : "Expand chat"}>
-            {chatExpanded ? "−" : "+"}
-          </button>
-        </div>
+        <button type="button" className="na-button na-secondary" onClick={() => setChatExpanded((v) => !v)} aria-expanded={chatExpanded} aria-label={chatExpanded ? "Collapse chat" : "Expand chat"}>
+          {chatExpanded ? "−" : "+"}
+        </button>
       </div>
 
       <AnimatePresence initial={false}>
         {chatExpanded ? (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.22 }} className="na-chat-body">
-            {geminiReady === "missing" ? (
-              <div className="na-api-banner" role="alert">
-                <AlertCircle size={14} />
-                <span>Add your Gemini API key in the NeuroAdapt popup to ask questions and get AI-powered answers.</span>
-                <button type="button" className="na-button na-secondary" onClick={verifyGemini}>Retry</button>
-              </div>
+
+            {!walkthroughMode && !goalActive ? (
+              <button
+                type="button"
+                className="na-guide-main-btn"
+                onClick={startWalkthrough}
+                disabled={loading}
+                aria-label="Guide me through this page step by step"
+              >
+                <Compass size={16} />
+                <span>Guide me through this page</span>
+                <ArrowRight size={14} />
+              </button>
             ) : null}
 
             {walkthroughMode ? (
-              <div className="na-walkthrough-badge"><Sparkles size={12} /> Walkthrough active. Complete each step and I will guide you to the next one.</div>
+              <div className="na-walkthrough-badge"><Sparkles size={12} /> Walkthrough active — complete each step and I will guide you forward.</div>
             ) : null}
 
             {goalActive && !walkthroughMode && getSession()?.status === "active" ? (
-              <div className="na-walkthrough-badge"><Sparkles size={12} /> Goal in progress. I will guide you as the page changes.</div>
+              <div className="na-walkthrough-badge"><Sparkles size={12} /> Goal in progress — I will guide you as the page changes.</div>
             ) : null}
 
-            {isFirstTimeMode && !walkthroughMode && geminiReady === "ready" ? (
+            {!walkthroughMode ? (
               <div className="na-suggestions" aria-label="Suggested questions">
-                {(isTaskHelperMode ? TASK_HELPER_SUGGESTIONS : FIRST_TIME_SUGGESTIONS).map((suggestion) => (
+                {(isFirstTimeMode ? FIRST_TIME_SUGGESTIONS : GENERAL_SUGGESTIONS).map((suggestion) => (
                   <button key={suggestion} type="button" className="na-suggestion-chip" disabled={loading} onClick={() => sendMessage(suggestion)}>{suggestion}</button>
                 ))}
               </div>
@@ -426,7 +427,7 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
 
             <ChecklistView items={checklist} />
 
-            {confusionSignals.length > 0 && geminiReady === "ready" ? (
+            {confusionSignals.length > 0 ? (
               <div className="na-api-banner" role="alert" style={{ borderColor: "rgba(251, 191, 36, 0.4)", background: "rgba(251, 191, 36, 0.08)" }}>
                 <AlertCircle size={14} />
                 <span>{confusionSignals[0].suggestion}</span>

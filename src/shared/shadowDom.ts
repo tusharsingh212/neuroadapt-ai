@@ -63,7 +63,7 @@ export function collectSearchRoots(
     for (const current of frontier) {
       for (const el of safeQueryAllElements(current)) {
         const shadow = getShadowRootSafe(el);
-        if (shadow && !visited.has(shadow)) {
+        if (shadow && !visited.has(shadow) && (el as HTMLElement).id !== "neuroadapt-host") {
           visited.add(shadow);
           roots.push(shadow);
           next.push(shadow);

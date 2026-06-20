@@ -37,14 +37,11 @@ function systemPrompt(persona: PersonaId): string {
         "Break actions into tiny steps. Explain unfamiliar terminology.",
         "Highlight only the ONE most relevant control."
       ]
-    : persona === "taskHelper"
-    ? [
-        "The user wants to complete a specific task on this website.",
-        "Give direct navigation guidance: name the exact button or section.",
-        "Keep each instruction to ONE action at a time."
-      ]
     : [
-        "Provide accurate, helpful guidance based on the current page content."
+        // Elderly mode
+        "The user may be unfamiliar with modern web interfaces. Use clear, reassuring language.",
+        "Explain what each action does before recommending it.",
+        "Warn before any action that cannot be undone or involves payment."
       ];
 
   return [
@@ -185,7 +182,7 @@ export async function analyzeTaskWithGemini(
   const allowFallback = options?.allowHeuristicFallback ?? false;
 
   if (!request.apiKey.trim()) {
-    throw new Error("Gemini API key is missing. Open the NeuroAdapt popup and save your API key.");
+    throw new Error("AI assistant unavailable. Backend API not yet configured.");
   }
 
   try {
