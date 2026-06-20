@@ -170,16 +170,14 @@ chrome.runtime.onMessage.addListener(
             }
           }
 
-          if (!BACKEND_GEMINI_API_KEY?.trim()) {
-            sendResponse({
-              ok: false,
-              error:
-                "AI assistant unavailable. Backend API not yet configured.",
-            } satisfies TaskAssistantMessage);
-            return;
+          // Unlike NA_RUN_ANALYSIS, the task assistant always has a heuristic
+          // fallback (see analyzeTaskWithGemini/heuristicFallback), so a missing
+          // API key should not short-circuit here — let analyzeTaskWithGemini
+          // degrade gracefully instead of returning a hard error. Only throttle
+          // when we're actually about to make a Gemini network call.
+          if (BACKEND_GEMINI_API_KEY?.trim()) {
+            await throttleGemini();
           }
-
-          await throttleGemini();
           const signalKey =
             msg.payload.signalKey || `task-${msg.payload.context.summary.url}`;
           const { signal, cleanup } = createAbortSignal(signalKey);
