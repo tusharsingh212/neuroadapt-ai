@@ -3,7 +3,7 @@ import type { AiAnalysisResult, AiGuidanceItem, AiIssue, AiRecommendation, DomAc
 const DOM_ACTION_TYPES = ["move", "hide", "style", "addClass", "changeText"];
 const DOM_POSITIONS = ["before", "after", "inside-start", "inside-end"];
 
-const PERSONAS: PersonaId[] = ["elderly", "visuallyImpaired", "firstTime", "patient", "auto"];
+const PERSONAS: PersonaId[] = ["elderly", "firstTime", "taskHelper", "auto"];
 const RECOMMENDATION_TYPES: AiRecommendation["type"][] = [
   "font-scale",
   "spacing",

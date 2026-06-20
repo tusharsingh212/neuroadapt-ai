@@ -1,5 +1,8 @@
 import { findElementByRef } from "@/shared/pageContext";
-import type { ChecklistItem, FormFieldGuide, DomAction } from "@/shared/types";
+import type { ChecklistItem, FormFieldGuide, DomAction, HighlightCandidate } from "@/shared/types";
+import { highlightElement as engineHighlight, clearHighlight as engineClear, resolveVisualTarget } from "@/shared/highlightEngine";
+import { injectStylesSafely, injectStylesForNode, removeInjectedStyles } from "@/shared/cspSafeStyles";
+import { queryDeepAll } from "@/shared/shadowDom";
 
 const GUIDE_ATTRS = [
   "data-neuroadapt-guided",
@@ -7,12 +10,10 @@ const GUIDE_ATTRS = [
   "data-neuroadapt-guide-label"
 ];
 
-function ensureGuideStyles(doc: Document): void {
-  if (doc.getElementById("neuroadapt-guide-styles")) return;
+const GUIDE_STYLE_ID = "neuroadapt-guide-styles";
+const DYNAMIC_CSS_STYLE_ID = "neuroadapt-dynamic-css";
 
-  const style = doc.createElement("style");
-  style.id = "neuroadapt-guide-styles";
-  style.textContent = `
+const GUIDE_CSS = `
     @keyframes na-guide-pulse {
       0%, 100% { box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.45), 0 0 24px rgba(16, 185, 129, 0.35); }
       50% { box-shadow: 0 0 0 8px rgba(56, 189, 248, 0.35), 0 0 32px rgba(56, 189, 248, 0.4); }
@@ -52,11 +53,20 @@ function ensureGuideStyles(doc: Document): void {
       background-color: rgba(236, 253, 245, 0.15) !important;
     }
   `;
-  doc.head.appendChild(style);
+
+function ensureGuideStyles(doc: Document): void {
+  injectStylesSafely(doc, GUIDE_STYLE_ID, GUIDE_CSS);
+}
+
+/** Also adopts the guide stylesheet into the element's own shadow root (if any), so the
+ * attribute-selector rules above apply even when the guided element lives inside a
+ * shadow tree (shadow roots don't inherit a document's adopted/`<style>` rules). */
+function ensureGuideStylesForNode(node: Node): void {
+  injectStylesForNode(node, GUIDE_STYLE_ID, GUIDE_CSS);
 }
 
 export function clearGuidanceHighlights(doc: Document = document): void {
-  for (const element of Array.from(doc.querySelectorAll<HTMLElement>("[data-neuroadapt-guided], [data-neuroadapt-field-guided]"))) {
+  for (const element of queryDeepAll<HTMLElement>("[data-neuroadapt-guided], [data-neuroadapt-field-guided]", doc)) {
     for (const attr of GUIDE_ATTRS) {
       element.removeAttribute(attr);
     }
@@ -67,18 +77,31 @@ export function clearGuidanceHighlights(doc: Document = document): void {
 export function highlightElement(
   doc: Document,
   ref: string | undefined,
-  tooltip = "Click here to continue."
+  tooltip = "Click here to continue.",
+  candidates?: HighlightCandidate[]
 ): HTMLElement | null {
   clearGuidanceHighlights(doc);
+  engineClear();
   if (!ref) return null;
 
   ensureGuideStyles(doc);
   const element = findElementByRef(doc, ref);
   if (!element) return null;
 
-  element.setAttribute("data-neuroadapt-guided", "true");
-  element.setAttribute("data-neuroadapt-guide-tooltip", tooltip);
-  element.scrollIntoView({ behavior: "smooth", block: "center" });
+  engineHighlight(element, tooltip, candidates);
+  ensureGuideStylesForNode(element);
+  const visualTarget = resolveVisualTarget(element);
+  try {
+    visualTarget.setAttribute("data-neuroadapt-guided", "true");
+    visualTarget.setAttribute("data-neuroadapt-guide-tooltip", tooltip);
+  } catch {
+    // ignore - exotic element without attribute support
+  }
+  try {
+    element.scrollIntoView({ behavior: "smooth", block: "center" });
+  } catch {
+    // ignore
+  }
   return element;
 }
 
@@ -88,7 +111,9 @@ export function highlightFormFields(doc: Document, fields: FormFieldGuide[]): vo
     if (!field.elementRef) continue;
     const element = findElementByRef(doc, field.elementRef);
     if (!element) continue;
-    element.setAttribute("data-neuroadapt-field-guided", "true");
+    ensureGuideStylesForNode(element);
+    const visualTarget = resolveVisualTarget(element);
+    visualTarget.setAttribute("data-neuroadapt-field-guided", "true");
     if (!element.getAttribute("title")) {
       const hint = field.required
         ? `${field.label} (required): ${field.explanation}`
@@ -104,9 +129,11 @@ export function applyGuidanceFromResponse(
   tooltip?: string,
   formFields?: FormFieldGuide[],
   customCss?: string,
-  domActions?: DomAction[]
+  domActions?: DomAction[],
+  candidates?: HighlightCandidate[]
 ): void {
-  highlightElement(doc, highlightRef, tooltip ?? "Click here to continue.");
+  engineClear();
+  highlightElement(doc, highlightRef, tooltip ?? "Click here to continue.", candidates);
   if (formFields?.length) {
     highlightFormFields(doc, formFields);
   }
@@ -116,15 +143,14 @@ export function applyGuidanceFromResponse(
 }
 
 export function resetDomActions(doc: Document): void {
-  const dynamicStyle = doc.getElementById("neuroadapt-dynamic-css");
-  if (dynamicStyle) dynamicStyle.remove();
+  removeInjectedStyles(doc, DYNAMIC_CSS_STYLE_ID);
 
-  const mutated = doc.querySelectorAll("[data-na-original-parent]");
+  const mutated = queryDeepAll<HTMLElement>("[data-na-original-parent]", doc);
   mutated.forEach(el => {
     // Basic restore (not fully comprehensive, but good enough for demo)
     const display = el.getAttribute("data-na-original-display");
     if (display) {
-      (el as HTMLElement).style.display = display === "null" ? "" : display;
+      el.style.display = display === "null" ? "" : display;
     }
   });
 }
@@ -133,13 +159,11 @@ export function applyDomActions(doc: Document, actions: DomAction[], customCss?:
   resetDomActions(doc);
 
   if (customCss) {
-    const style = doc.createElement("style");
-    style.id = "neuroadapt-dynamic-css";
-    style.textContent = customCss;
-    doc.head.appendChild(style);
+    injectStylesSafely(doc, DYNAMIC_CSS_STYLE_ID, customCss);
   }
 
   for (const action of actions) {
+    try {
     const el = findElementByRef(doc, action.elementRef);
     if (!el) continue;
 
@@ -177,6 +201,9 @@ export function applyDomActions(doc: Document, actions: DomAction[], customCss?:
           }
         }
         break;
+    }
+    } catch {
+      // A single malformed/AI-provided action must never abort the rest of the batch.
     }
   }
 }

@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from "react";
 import { applyAdaptation, resetAdaptation } from "@/shared/adaptation";
 import { sendRuntimeMessage } from "@/shared/chrome";
 import { applyDomActions, resetDomActions } from "@/shared/elementGuide";
-import { HeuristicObserver } from "@/shared/heuristics";
+import { HeuristicObserver, type HeuristicSignal } from "@/shared/heuristics";
 import { buildAnalysisReport, inspectPage } from "@/shared/pageInsights";
 import { extractPageSummary } from "@/shared/pageSummary";
 import { formatTaskTime, progressValue } from "@/shared/metrics";
@@ -36,6 +36,10 @@ import type { NeuroAdaptMessage, NeuroAdaptStateMessage } from "@/shared/messagi
 import type { AiAnalysisMessage } from "@/shared/messaging";
 
 import { TaskAssistantPanel } from "@/content/TaskAssistantPanel";
+import { TaskSidebar } from "@/content/TaskSidebar";
+import { OverlayPanel } from "@/content/OverlayPanel";
+import type { ConfusionSignal } from "@/shared/types";
+import { toggleOverlayMode } from "@/shared/overlayManager";
 
 function feedLines(report: AnalysisReport, insights: PageInsights): string[] {
   const persona = report.detectedPersona;
@@ -50,12 +54,10 @@ function feedLines(report: AnalysisReport, insights: PageInsights): string[] {
     lines.splice(1, 0, "Healthcare signals detected.");
   }
 
-  if (persona === "patient") {
-    lines.splice(2, 0, "Prioritizing care and appointment actions...");
-  } else if (persona === "visuallyImpaired") {
-    lines.splice(2, 0, "Boosting contrast and focus clarity...");
-  } else if (persona === "firstTime") {
+  if (persona === "firstTime") {
     lines.splice(2, 0, "Adding step-by-step guidance...");
+  } else if (persona === "taskHelper") {
+    lines.splice(2, 0, "Finding the exact feature and next action...");
   } else if (persona === "elderly") {
     lines.splice(2, 0, "Increasing target size and spacing...");
   }
@@ -101,6 +103,9 @@ export function ContentApp(): JSX.Element {
   const [comparison, setComparison] = useState<"original" | "adapted">(DEFAULT_SETTINGS.comparisonMode);
   const [busy, setBusy] = useState<"analyze" | "adapt" | "reset" | null>(null);
 
+  const [confusionSignals, setConfusionSignals] = useState<ConfusionSignal[]>([]);
+  const [pendingSuggestion, setPendingSuggestion] = useState<HeuristicSignal | null>(null);
+  const [sidebarVisible, setSidebarVisible] = useState(false);
   const settingsRef = useRef(settings);
   const debounceRef = useRef<number | null>(null);
 
@@ -193,7 +198,15 @@ export function ContentApp(): JSX.Element {
       attributes: true
     });
 
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      // The debounced re-analysis timeout can otherwise fire after unmount
+      // (e.g. on SPA teardown/remount) and call setState on a dead component.
+      if (debounceRef.current) {
+        window.clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -467,39 +480,54 @@ export function ContentApp(): JSX.Element {
 
   useEffect(() => {
     const heuristics = new HeuristicObserver((signal) => {
-      const nextSettings: ExtensionSettings = {
-        ...settingsRef.current,
-        enabled: true,
-        persona: signal.suggestedPersona,
-        comparisonMode: "adapted",
-        autoDetect: true
-      };
-      const nextInsights = inspectPage(document);
-      const nextAnalysis = buildAnalysisReport(nextSettings, nextInsights);
-      const nextFeed = [signal.message, ...feedLines(nextAnalysis, nextInsights)].slice(0, 5);
+      setConfusionSignals(signal.signals);
 
-      settingsRef.current = nextSettings;
-      setSettings(nextSettings);
-      setComparison("adapted");
-      setInsights(nextInsights);
-      setAnalysis(nextAnalysis);
-      setMessages(nextFeed);
-      setRuntime({
-        state: "done",
-        messages: nextFeed,
-        lastUpdated: Date.now()
-      });
-      setVisible(true);
-      saveSettings(nextSettings).catch(() => undefined);
-      applyAdaptation(document, nextSettings, nextInsights);
+      // Only surface a suggestion on strong signals - and always ask before mutating
+      // the page, rather than silently auto-adapting out from under the user.
+      if (signal.signals.some((s) => s.severity === "high")) {
+        setPendingSuggestion(signal);
+        setVisible(true);
+        setCollapsed(false);
+      }
     });
 
     heuristics.start(document);
     return () => heuristics.stop();
   }, []);
 
+  function acceptHeuristicSuggestion(): void {
+    if (!pendingSuggestion) return;
+    const signal = pendingSuggestion;
+    const nextSettings: ExtensionSettings = {
+      ...settingsRef.current,
+      enabled: true,
+      persona: signal.suggestedPersona,
+      comparisonMode: "adapted",
+      autoDetect: true
+    };
+    const nextInsights = inspectPage(document);
+    const nextAnalysis = buildAnalysisReport(nextSettings, nextInsights);
+    const nextFeed = [signal.message, ...feedLines(nextAnalysis, nextInsights)].slice(0, 5);
+
+    settingsRef.current = nextSettings;
+    setSettings(nextSettings);
+    setComparison("adapted");
+    setInsights(nextInsights);
+    setAnalysis(nextAnalysis);
+    setMessages(nextFeed);
+    setRuntime({ state: "done", messages: nextFeed, lastUpdated: Date.now() });
+    setVisible(true);
+    saveSettings(nextSettings).catch(() => undefined);
+    applyAdaptation(document, nextSettings, nextInsights);
+    setPendingSuggestion(null);
+  }
+
+  function dismissHeuristicSuggestion(): void {
+    setPendingSuggestion(null);
+  }
+
   const resolvedPersona = settings.persona === "auto" ? insights.detectedPersona : settings.persona;
-  const isFirstTimeMode = resolvedPersona === "firstTime";
+  const isFirstTimeMode = resolvedPersona === "firstTime" || resolvedPersona === "taskHelper";
 
   const metricRows = [
     {
@@ -556,20 +584,62 @@ export function ContentApp(): JSX.Element {
               </div>
 
               <div className="na-body">
+                {pendingSuggestion ? (
+                  <div className="na-section na-first-time-banner" role="alertdialog" aria-label="Adaptation suggestion">
+                    <div className="na-section-head">
+                      <SectionTitle
+                        title="Need a hand?"
+                        subtitle={pendingSuggestion.message}
+                      />
+                      <Pill className="text-[10px] border-amber-400/20 bg-amber-400/10 text-amber-100">
+                        Suggested
+                      </Pill>
+                    </div>
+                    <div className="na-button-row">
+                      <button type="button" className="na-button na-primary" onClick={acceptHeuristicSuggestion}>
+                        <ShieldCheck size={14} />
+                        <span style={{ marginLeft: 8 }}>Apply adaptation</span>
+                      </button>
+                      <button type="button" className="na-button na-secondary" onClick={dismissHeuristicSuggestion}>
+                        <span>Not now</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
                 <TaskAssistantPanel
                   settings={settings}
                   persona={resolvedPersona}
                   onStatus={(message) => setMessages((current) => [message, ...current].slice(0, 5))}
+                  onGoalChange={() => setSidebarVisible((v) => !v)}
+                  onConfusion={(signals) => setConfusionSignals(signals)}
                 />
+                <OverlayPanel />
+                <TaskSidebar onRequestReanalysis={() => {
+                  if (settings.enabled) {
+                    applyAdaptation(document, settings, inspectPage(document));
+                  }
+                }} />
 
                 {isFirstTimeMode ? (
                   <div className="na-section na-first-time-banner">
                     <div className="na-section-head">
-                      <SectionTitle title="First-Time Guide Mode" subtitle="Step-by-step AI guidance is active for this page." />
-                      <Pill className="text-[10px] border-emerald-400/20 bg-emerald-400/10 text-emerald-100">Live guide</Pill>
+                      <SectionTitle
+                        title={settings.persona === "taskHelper" ? "Task Helper Mode" : "First-Time Guide Mode"}
+                        subtitle={
+                          settings.persona === "taskHelper"
+                            ? "The assistant is finding the exact feature and next action for this page."
+                            : "Step-by-step AI guidance is active for this page."
+                        }
+                      />
+                      <Pill className="text-[10px] border-emerald-400/20 bg-emerald-400/10 text-emerald-100">
+                        {settings.persona === "taskHelper" ? "Task finder" : "Live guide"}
+                      </Pill>
                     </div>
                     <p className="na-text na-muted">
-                      Use the Task Assistant above to ask questions in plain language. I'll highlight what to click and walk you through forms.
+                      {settings.persona === "taskHelper"
+                        ? "Ask questions in the Task Helper above - I will tell you where the feature is, highlight the right control, and point you to the next action."
+                        : "Ask questions in the First-Time Assistant above - I will answer using Gemini and highlight what to click on the page."}
                     </p>
                   </div>
                 ) : null}
@@ -779,3 +849,4 @@ export function ContentApp(): JSX.Element {
     </div>
   );
 }
+

@@ -1,16 +1,29 @@
 import { DEFAULT_SETTINGS } from "@/shared/types";
 import { analyzeWithGemini } from "@/shared/gemini";
 import { analyzeTaskWithGemini } from "@/shared/taskAssistant";
+import { callGemini } from "@/shared/geminiClient";
+import { createAbortSignal } from "@/shared/requestManager";
 import { loadAiSettings, loadSettings, saveAiSettings, saveSettings } from "@/shared/storage";
 import type { AiAnalysisMessage, NeuroAdaptMessage, TaskAssistantMessage } from "@/shared/messaging";
 import type { AiAnalysisResult, TaskAssistantResult } from "@/shared/types";
+
+const CACHE_MAX_SIZE = 50;
 
 const analysisCache = new Map<string, AiAnalysisResult>();
 const taskAssistantCache = new Map<string, TaskAssistantResult>();
 let lastGeminiRequestAt = 0;
 
+function trimCache(cache: Map<string, unknown>, maxSize: number): void {
+  while (cache.size > maxSize) {
+    const key = cache.keys().next().value;
+    if (key !== undefined) cache.delete(key);
+  }
+}
+
 // PLACE YOUR GEMINI API KEY HERE
-const BACKEND_GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
+// Get a valid key from https://aistudio.google.com/apikey
+// Format: AIzaSy... (starts with AIza)
+const BACKEND_GEMINI_API_KEY: string = "";
 
 function cacheKey(message: Extract<NeuroAdaptMessage, { type: "NA_RUN_GEMINI_ANALYSIS" }>): string {
   const { summary, preferredPersona, question } = message.payload;
@@ -24,15 +37,18 @@ function cacheKey(message: Extract<NeuroAdaptMessage, { type: "NA_RUN_GEMINI_ANA
   });
 }
 
-function taskCacheKey(message: Extract<NeuroAdaptMessage, { type: "NA_RUN_TASK_ASSISTANT" }>): string {
-  const { context, question, walkthroughMode, walkthroughStepIndex } = message.payload;
-  const historyLen = message.payload.conversationHistory?.length ?? 0;
+function taskCacheKey(message: Extract<NeuroAdaptMessage, { type: "NA_RUN_TASK_ASSISTANT" }>): string | null {
+  const { context, question, conversationHistory } = message.payload;
+  const historyLen = conversationHistory?.length ?? 0;
+
+  // Don't cache multi-turn chat — page state and context change.
+  if (historyLen > 2) {
+    return null;
+  }
+
   return JSON.stringify({
     url: context.summary.url,
     question,
-    walkthroughMode,
-    walkthroughStepIndex,
-    historyLen,
     stats: context.summary.stats
   });
 }
@@ -46,13 +62,47 @@ async function throttleGemini(): Promise<void> {
   lastGeminiRequestAt = Date.now();
 }
 
+async function seedAiSettingsFromEnv(): Promise<void> {
+  if (!BACKEND_GEMINI_API_KEY.trim()) return;
+
+  const aiSettings = await loadAiSettings();
+  // Only overwrite if backend key is valid format (AIza...)
+  if (BACKEND_GEMINI_API_KEY.startsWith("AIza")) {
+    await saveAiSettings({
+      ...aiSettings,
+      geminiApiKey: BACKEND_GEMINI_API_KEY.trim()
+    });
+  }
+}
+
+void seedAiSettingsFromEnv();
+
+async function smokeTestGemini(apiKey: string, model: string): Promise<void> {
+  const text = await callGemini(apiKey, model, 'Return {"ok":true}.', {
+    temperature: 0,
+    maxOutputTokens: 32,
+    timeout: 5000,
+    retries: 0
+  });
+
+  const result = JSON.parse(text) as { ok?: boolean };
+  if (!result.ok) {
+    throw new Error("Gemini returned an unexpected response.");
+  }
+}
+
 chrome.runtime.onInstalled.addListener(async () => {
   const settings = await loadSettings();
   const nextSettings = { ...DEFAULT_SETTINGS, ...settings };
 
   await saveSettings(nextSettings);
+  await seedAiSettingsFromEnv();
   chrome.action.setBadgeText({ text: nextSettings.enabled ? "ON" : "" });
   chrome.action.setBadgeBackgroundColor({ color: "#0f766e" });
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  seedAiSettingsFromEnv().catch(() => undefined);
 });
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -74,6 +124,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     (async () => {
       const settings = await loadSettings();
       await saveSettings({ ...settings, ...message.payload });
+      await seedAiSettingsFromEnv();
       sendResponse({ ok: true });
     })();
     return true;
@@ -110,8 +161,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
         await throttleGemini();
         const aiSettings = await loadAiSettings();
+        const apiKey = (BACKEND_GEMINI_API_KEY && BACKEND_GEMINI_API_KEY.startsWith("AIza")) ? BACKEND_GEMINI_API_KEY : aiSettings.geminiApiKey;
+        if (!apiKey?.startsWith("AIza")) {
+          sendResponse({ ok: false, error: "No valid Gemini API key configured." } satisfies AiAnalysisMessage);
+          return;
+        }
         const analysis = await analyzeWithGemini({
-          apiKey: BACKEND_GEMINI_API_KEY || aiSettings.geminiApiKey,
+          apiKey,
           model: aiSettings.model,
           summary: message.payload.summary,
           preferredPersona: message.payload.preferredPersona,
@@ -119,6 +175,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         });
 
         analysisCache.set(key, analysis);
+        trimCache(analysisCache as Map<string, unknown>, CACHE_MAX_SIZE);
         sendResponse({ ok: true, analysis } satisfies AiAnalysisMessage);
       } catch (error) {
         const messageText = error instanceof Error ? error.message : "Gemini analysis failed.";
@@ -132,26 +189,44 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     (async () => {
       try {
         const key = taskCacheKey(message);
-        const cached = taskAssistantCache.get(key);
-        if (cached && Date.now() - cached.generatedAt < 2 * 60 * 1000) {
-          sendResponse({ ok: true, result: { ...cached, cached: true } } satisfies TaskAssistantMessage);
-          return;
+        if (key) {
+          const cached = taskAssistantCache.get(key);
+          if (cached && Date.now() - cached.generatedAt < 2 * 60 * 1000) {
+            sendResponse({ ok: true, result: { ...cached, cached: true } } satisfies TaskAssistantMessage);
+            return;
+          }
         }
 
         await throttleGemini();
         const aiSettings = await loadAiSettings();
-        const result = await analyzeTaskWithGemini({
-          apiKey: BACKEND_GEMINI_API_KEY || aiSettings.geminiApiKey,
-          model: aiSettings.model,
-          context: message.payload.context,
-          question: message.payload.question,
-          conversationHistory: message.payload.conversationHistory,
-          walkthroughMode: message.payload.walkthroughMode,
-          walkthroughStepIndex: message.payload.walkthroughStepIndex
-        });
+        const apiKey = (BACKEND_GEMINI_API_KEY && BACKEND_GEMINI_API_KEY.startsWith("AIza")) ? BACKEND_GEMINI_API_KEY : aiSettings.geminiApiKey;
+        if (!apiKey?.startsWith("AIza")) {
+          sendResponse({ ok: false, error: "No valid Gemini API key configured." } satisfies TaskAssistantMessage);
+          return;
+        }
+        const signalKey = message.payload.signalKey || `task-${message.payload.context.summary.url}`;
+        const { signal, cleanup } = createAbortSignal(signalKey);
+        try {
+          const result = await analyzeTaskWithGemini({
+            apiKey,
+            model: aiSettings.model,
+            context: message.payload.context,
+            question: message.payload.question,
+            conversationHistory: message.payload.conversationHistory,
+            goalSession: message.payload.goalSession,
+            checklist: message.payload.checklist,
+            confusionSignals: message.payload.confusionSignals,
+            signal
+          }, { allowHeuristicFallback: true });
 
-        taskAssistantCache.set(key, result);
-        sendResponse({ ok: true, result } satisfies TaskAssistantMessage);
+          if (key) {
+            taskAssistantCache.set(key, result);
+            trimCache(taskAssistantCache as Map<string, unknown>, CACHE_MAX_SIZE);
+          }
+          sendResponse({ ok: true, result } satisfies TaskAssistantMessage);
+        } finally {
+          cleanup();
+        }
       } catch (error) {
         const messageText = error instanceof Error ? error.message : "Task assistant failed.";
         sendResponse({ ok: false, error: messageText } satisfies TaskAssistantMessage);
@@ -170,20 +245,19 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "NA_VERIFY_BACKEND_KEY") {
     (async () => {
       const aiSettings = await loadAiSettings();
-      const apiKeyToUse = BACKEND_GEMINI_API_KEY || aiSettings.geminiApiKey;
-      if (!apiKeyToUse || !apiKeyToUse.trim() || apiKeyToUse === "YOUR_API_KEY_HERE") {
-        sendResponse({ ok: false, error: "Backend API key is empty. Please set it in src/background/index.ts or .env." });
+      const apiKeyToUse = (BACKEND_GEMINI_API_KEY && BACKEND_GEMINI_API_KEY.startsWith("AIza")) ? BACKEND_GEMINI_API_KEY : aiSettings.geminiApiKey;
+      if (!apiKeyToUse || !apiKeyToUse.trim() || !apiKeyToUse.startsWith("AIza")) {
+        sendResponse({ ok: false, error: "No valid Gemini API key configured. Get a key from https://aistudio.google.com/apikey (format: AIza...)." });
         return;
       }
       try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKeyToUse)}`);
-        if (response.ok) {
-          sendResponse({ ok: true });
-        } else {
-          sendResponse({ ok: false, error: `Invalid API Key (HTTP ${response.status})` });
-        }
+        await smokeTestGemini(apiKeyToUse, aiSettings.model);
+        sendResponse({ ok: true });
       } catch (e) {
-        sendResponse({ ok: false, error: "Network error during verification." });
+        sendResponse({
+          ok: false,
+          error: e instanceof Error ? e.message : "Network error during verification."
+        });
       }
     })();
     return true;

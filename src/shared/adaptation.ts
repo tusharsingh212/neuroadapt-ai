@@ -1,5 +1,7 @@
 import { PERSONA_GUIDANCE, type ExtensionSettings, type PageInsights, type PersonaId } from "@/shared/types";
 import { resetDomActions } from "@/shared/elementGuide";
+import { injectStylesSafely } from "@/shared/cspSafeStyles";
+import { queryDeepAll } from "@/shared/shadowDom";
 
 export const INTERACTIVE_SELECTOR = [
   "button",
@@ -56,6 +58,22 @@ const FIRST_TIME_ACTION_KEYWORDS = [
   "search"
 ];
 
+const TASK_HELPER_ACTION_KEYWORDS = [
+  "search",
+  "find",
+  "open",
+  "help",
+  "guide",
+  "where",
+  "how",
+  "apply",
+  "submit",
+  "next",
+  "continue",
+  "download",
+  "upload"
+];
+
 const FIRST_TIME_SECONDARY_KEYWORDS = [
   ...SECONDARY_KEYWORDS,
   "advertisement",
@@ -91,6 +109,17 @@ function firstTimeGuideText(label: string, element: HTMLElement): string {
   return "Recommended next action";
 }
 
+function taskHelperGuideText(label: string, element: HTMLElement): string {
+  const lower = label.toLowerCase();
+  if (/search|find|lookup/.test(lower)) return "Use this to find the feature";
+  if (/start|get started|sign up|create account/.test(lower)) return "Begin here to continue the task";
+  if (/next|continue/.test(lower)) return "Move to the next step";
+  if (/book|schedule|appointment/.test(lower)) return "Choose the right service or time";
+  if (/save|submit|send|confirm|checkout|apply/.test(lower)) return "Review, then finish the task";
+  if (element.matches("input, select, textarea")) return "Fill this in to continue";
+  return "Use this to complete the task";
+}
+
 function getLabel(element: Element): string {
   if (!(element instanceof HTMLElement)) return "";
   return (
@@ -123,13 +152,9 @@ function applyInlineStyles(element: HTMLElement, styles: Record<string, string>)
   }
 }
 
-function ensureStyleSheet(doc: Document): HTMLStyleElement {
-  const existing = doc.getElementById("neuroadapt-global-styles");
-  if (existing instanceof HTMLStyleElement) return existing;
+const GLOBAL_ADAPTATION_STYLE_ID = "neuroadapt-global-styles";
 
-  const style = doc.createElement("style");
-  style.id = "neuroadapt-global-styles";
-  style.textContent = `
+const GLOBAL_ADAPTATION_CSS = `
     html.na-enabled {
       scroll-behavior: smooth !important;
     }
@@ -226,6 +251,61 @@ function ensureStyleSheet(doc: Document): HTMLStyleElement {
       background-image: linear-gradient(90deg, rgba(236, 253, 245, 0.7), transparent) !important;
     }
 
+    html.na-mode-taskHelper [data-neuroadapt-secondary='true'] {
+      opacity: 0.45 !important;
+      filter: saturate(0.95);
+    }
+
+    html.na-mode-taskHelper body {
+      line-height: 1.68 !important;
+      letter-spacing: 0.005em !important;
+    }
+
+    html.na-mode-taskHelper :is(main, article, section, form) {
+      scroll-margin-top: 24px !important;
+    }
+
+    html.na-mode-taskHelper [data-neuroadapt-hint='true'] {
+      position: relative !important;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.42), 0 16px 30px rgba(2, 6, 23, 0.18) !important;
+    }
+
+    html.na-mode-taskHelper [data-neuroadapt-primary='true'] {
+      outline: 3px solid rgba(59, 130, 246, 0.5) !important;
+      outline-offset: 3px !important;
+    }
+
+    html.na-mode-taskHelper [data-neuroadapt-step] {
+      position: relative !important;
+      isolation: isolate !important;
+    }
+
+    html.na-mode-taskHelper [data-neuroadapt-step]::after {
+      content: "Step " attr(data-neuroadapt-step) ": " attr(data-neuroadapt-guide);
+      position: absolute !important;
+      z-index: 2147483646 !important;
+      left: 0 !important;
+      bottom: calc(100% + 8px) !important;
+      max-width: min(280px, 80vw) !important;
+      width: max-content !important;
+      padding: 8px 10px !important;
+      border-radius: 999px !important;
+      background: linear-gradient(135deg, #eff6ff, #dbeafe) !important;
+      border: 1px solid rgba(59, 130, 246, 0.35) !important;
+      color: #0f172a !important;
+      font: 800 12px/1.2 Arial, sans-serif !important;
+      box-shadow: 0 14px 30px rgba(15, 23, 42, 0.16) !important;
+      pointer-events: none !important;
+      white-space: normal !important;
+      text-align: left !important;
+    }
+
+    html.na-mode-taskHelper [data-neuroadapt-field-guide='true'] {
+      border-color: rgba(59, 130, 246, 0.65) !important;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16) !important;
+      background-image: linear-gradient(90deg, rgba(239, 246, 255, 0.7), transparent) !important;
+    }
+
     html.na-preview-original body {
       filter: none !important;
       font-size: 1em !important;
@@ -233,12 +313,14 @@ function ensureStyleSheet(doc: Document): HTMLStyleElement {
       transform: none !important;
     }
   `;
-  doc.head.appendChild(style);
-  return style;
+
+function ensureStyleSheet(doc: Document): void {
+  injectStylesSafely(doc, GLOBAL_ADAPTATION_STYLE_ID, GLOBAL_ADAPTATION_CSS);
 }
 
 function cleanupAttrs(doc: Document): void {
-  for (const element of Array.from(doc.querySelectorAll<HTMLElement>(TRACKED_ATTRS.map((attr) => `[${attr}]`).join(",")))) {
+  const selector = TRACKED_ATTRS.map((attr) => `[${attr}]`).join(",");
+  for (const element of queryDeepAll<HTMLElement>(selector, doc)) {
     const originalStyle = element.getAttribute("data-neuroadapt-inline-style");
     if (originalStyle !== null) {
       if (originalStyle) {
@@ -263,13 +345,19 @@ function updateBodyClasses(doc: Document, settings: ExtensionSettings): void {
     "na-mode-firstTime",
     settings.enabled && settings.persona === "firstTime" && settings.comparisonMode === "adapted"
   );
+  root.classList.toggle(
+    "na-mode-taskHelper",
+    settings.enabled && settings.persona === "taskHelper" && settings.comparisonMode === "adapted"
+  );
 }
 
 function markInteractiveTargets(doc: Document, persona: PersonaId, insights: PageInsights): number {
-  const interactive = Array.from(doc.querySelectorAll<HTMLElement>(INTERACTIVE_SELECTOR)).filter(isVisible);
+  const interactive = queryDeepAll<HTMLElement>(INTERACTIVE_SELECTOR, doc).filter(isVisible);
   const primaryHints = new Set<string>(
     persona === "firstTime"
       ? FIRST_TIME_ACTION_KEYWORDS
+      : persona === "taskHelper"
+        ? TASK_HELPER_ACTION_KEYWORDS
       : ["continue", "help", "support", "save", "submit", "view details"]
   );
 
@@ -284,7 +372,9 @@ function markInteractiveTargets(doc: Document, persona: PersonaId, insights: Pag
       persona === "firstTime"
         ? FIRST_TIME_SECONDARY_KEYWORDS.some((keyword) => lower.includes(keyword))
         : SECONDARY_KEYWORDS.some((keyword) => lower.includes(keyword));
-    const isHint = persona === "firstTime" && FIRST_TIME_ACTION_KEYWORDS.some((keyword) => highlightKeyword(keyword).test(lower)) && !isSecondary;
+    const isHint =
+      (persona === "firstTime" && FIRST_TIME_ACTION_KEYWORDS.some((keyword) => highlightKeyword(keyword).test(lower)) && !isSecondary) ||
+      (persona === "taskHelper" && TASK_HELPER_ACTION_KEYWORDS.some((keyword) => highlightKeyword(keyword).test(lower)) && !isSecondary);
 
     element.setAttribute("data-neuroadapt-target", "true");
     element.setAttribute("data-neuroadapt-mutated", "true");
@@ -294,6 +384,11 @@ function markInteractiveTargets(doc: Document, persona: PersonaId, insights: Pag
     if (persona === "firstTime" && isHint && firstTimeStep <= 4) {
       element.setAttribute("data-neuroadapt-step", String(firstTimeStep));
       element.setAttribute("data-neuroadapt-guide", firstTimeGuideText(label, element));
+      firstTimeStep += 1;
+    }
+    if (persona === "taskHelper" && isHint && firstTimeStep <= 4) {
+      element.setAttribute("data-neuroadapt-step", String(firstTimeStep));
+      element.setAttribute("data-neuroadapt-guide", taskHelperGuideText(label, element));
       firstTimeStep += 1;
     }
     if (!element.getAttribute("title") && label) {
@@ -334,6 +429,18 @@ function markInteractiveTargets(doc: Document, persona: PersonaId, insights: Pag
       });
     }
 
+    if (persona === "taskHelper" && (isPrimary || isHint)) {
+      applyInlineStyles(element, {
+        "font-weight": "700",
+        "min-height": "48px",
+        padding: "0.85rem 1rem",
+        "border-radius": "16px",
+        outline: "3px solid rgba(59, 130, 246, 0.5)",
+        "outline-offset": "3px",
+        "box-shadow": "0 16px 32px rgba(59, 130, 246, 0.16)"
+      });
+    }
+
     count += 1;
   }
 
@@ -341,8 +448,9 @@ function markInteractiveTargets(doc: Document, persona: PersonaId, insights: Pag
 }
 
 function enhanceReadableText(doc: Document, persona: PersonaId): void {
-  const textNodes = Array.from(
-    doc.querySelectorAll<HTMLElement>("p, li, label, span, td, th, small, strong, em, h1, h2, h3, h4")
+  const textNodes = queryDeepAll<HTMLElement>(
+    "p, li, label, span, td, th, small, strong, em, h1, h2, h3, h4",
+    doc
   ).filter((element) => isVisible(element) && (element.textContent ?? "").trim().length > 0);
 
   for (const element of textNodes.slice(0, 220)) {
@@ -360,16 +468,24 @@ function enhanceReadableText(doc: Document, persona: PersonaId): void {
         "font-weight": element.matches("h1, h2, h3, h4, strong, label") ? "800" : "550"
       });
     }
+
+    if (persona === "taskHelper") {
+      applyInlineStyles(element, {
+        "line-height": "1.68",
+        "font-weight": element.matches("h1, h2, h3, h4, strong, label") ? "800" : "550"
+      });
+    }
   }
 }
 
 function emphasizePageSections(doc: Document, persona: PersonaId): void {
-  const sections = Array.from(doc.querySelectorAll<HTMLElement>("header, nav, aside, main, section, article")).filter(
-    isVisible
-  );
+  const sections = queryDeepAll<HTMLElement>("header, nav, aside, main, section, article", doc).filter(isVisible);
   for (const section of sections) {
     const label = getLabel(section).toLowerCase();
     if (persona === "firstTime" && /sidebar|filters|advanced|secondary/.test(label)) {
+      section.setAttribute("data-neuroadapt-secondary", "true");
+    }
+    if (persona === "taskHelper" && /sidebar|filters|advanced|secondary/.test(label)) {
       section.setAttribute("data-neuroadapt-secondary", "true");
     }
     if (
@@ -392,11 +508,18 @@ function emphasizePageSections(doc: Document, persona: PersonaId): void {
         transform: "scale(0.99)"
       });
     }
+
+    if (persona === "taskHelper" && section.hasAttribute("data-neuroadapt-secondary")) {
+      applyInlineStyles(section, {
+        opacity: "0.45",
+        transform: "scale(0.99)"
+      });
+    }
   }
 }
 
 function guideFirstTimeForms(doc: Document): void {
-  const fields = Array.from(doc.querySelectorAll<HTMLElement>("input:not([type='hidden']), select, textarea"))
+  const fields = queryDeepAll<HTMLElement>("input:not([type='hidden']), select, textarea", doc)
     .filter(isVisible)
     .slice(0, 24);
 
@@ -434,7 +557,7 @@ export function applyAdaptation(doc: Document, settings: ExtensionSettings, insi
   const targetCount = markInteractiveTargets(doc, persona, insights);
   enhanceReadableText(doc, persona);
   emphasizePageSections(doc, persona);
-  if (persona === "firstTime") {
+  if (persona === "firstTime" || persona === "taskHelper") {
     guideFirstTimeForms(doc);
   }
   return targetCount;
@@ -448,6 +571,7 @@ export function resetAdaptation(doc: Document): void {
     "na-enabled",
     "na-mode-elderly",
     "na-mode-firstTime",
+    "na-mode-taskHelper",
     "na-preview-original"
   );
 }
