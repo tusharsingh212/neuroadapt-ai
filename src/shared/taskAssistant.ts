@@ -150,9 +150,13 @@ function heuristicFallback(context: PageContext, question: string): TaskAssistan
   }
 
   const informational = /what is|what does|explain|mean|help me understand/i.test(question);
+  const asksAboutForm = /\bform\b/i.test(question);
+  const firstForm = context.summary.forms[0];
 
   return {
-    reply: informational
+    reply: informational && asksAboutForm && firstForm?.fields.length
+      ? `This form ("${firstForm.label || "the form on this page"}") asks for: ${firstForm.fields.map((f) => f.label || "an unlabeled field").join(", ")}. Fill these in, then look for a submit button to continue.`
+      : informational
       ? `This page is "${context.summary.title}". ${context.summary.description || context.summary.textBlocks[0]?.text || "Tell me what you'd like to do and I'll guide you step by step."}`
       : primaryButton
         ? `I can see "${primaryButton.label}" on this page — that's likely your next step.`
@@ -182,6 +186,9 @@ export async function analyzeTaskWithGemini(
   const allowFallback = options?.allowHeuristicFallback ?? false;
 
   if (!request.apiKey.trim()) {
+    if (allowFallback) {
+      return heuristicFallback(request.context, request.question);
+    }
     throw new Error("AI assistant unavailable. Backend API not yet configured.");
   }
 
