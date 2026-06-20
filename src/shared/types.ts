@@ -1,6 +1,8 @@
 export type PersonaId =
   | "elderly"
-  | "firstTime";
+  | "firstTime"
+  | "taskHelper"
+  | "auto";
 
 export type ComparisonMode = "original" | "adapted";
 
@@ -289,10 +291,14 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
 
 export const PERSONA_LABELS: Record<PersonaId, string> = {
   elderly: "Elderly User",
-  firstTime: "First-Time Internet User"
+  firstTime: "First-Time Internet User",
+  taskHelper: "Task Helper",
+  auto: "Auto-Detected"
 };
 
 export const PERSONA_GUIDANCE: Record<PersonaId, string[]> = {
   elderly: ["Increase text size", "Increase button size", "Reduce visual clutter"],
-  firstTime: ["Step-by-step hints", "Contextual tooltips", "Hide secondary actions"]
+  firstTime: ["Step-by-step hints", "Contextual tooltips", "Hide secondary actions"],
+  taskHelper: ["Focus on the current task", "Highlight the next required action", "Minimize non-essential distractions"],
+  auto: ["Apply balanced default accessibility settings"]
 };

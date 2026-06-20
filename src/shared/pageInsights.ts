@@ -1,4 +1,5 @@
 import {
+  PERSONA_GUIDANCE,
   PERSONA_LABELS,
   type AnalysisReport,
   type AiAnalysisResult,
@@ -274,6 +275,10 @@ function adaptationList(persona: PersonaId): string[] {
       return ["Larger buttons", "Increased font sizes", "Expanded spacing", "Reduced clutter"];
     case "firstTime":
       return ["Step-by-step hints", "Contextual tooltips", "Primary action highlighting", "Simplified secondary actions"];
+    default:
+      // "taskHelper"/"auto" are AI-detected personas, not user-selectable settings values,
+      // so fall back to the shared guidance copy rather than duplicating adaptation text here.
+      return PERSONA_GUIDANCE[persona];
   }
 }
 
