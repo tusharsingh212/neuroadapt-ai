@@ -26,6 +26,10 @@ export const contentStyles = `
 
   .na-shell.na-collapsed {
     width: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0;
   }
 
   .na-card {
@@ -618,6 +622,142 @@ export const contentStyles = `
   .na-first-time-banner {
     border-color: rgba(16, 185, 129, 0.2);
     background: rgba(16, 185, 129, 0.06);
+  }
+
+  /* Suggestion that replaces the "Need a hand?" dialog */
+  .na-suggestion-banner {
+    border-color: rgba(16, 185, 129, 0.2);
+    background: rgba(16, 185, 129, 0.06);
+  }
+
+  /* ── Bubble launcher ─────────────────────────────────────────── */
+  .na-bubble {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.92));
+    color: #a5f3fc;
+    box-shadow:
+      0 8px 32px rgba(2, 6, 23, 0.45),
+      0 0 0 1px rgba(125, 211, 252, 0.12);
+    cursor: pointer;
+    transition: transform 180ms ease, box-shadow 180ms ease;
+    align-self: flex-end;
+  }
+
+  .na-bubble:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 12px 36px rgba(2, 6, 23, 0.55),
+      0 0 0 1px rgba(125, 211, 252, 0.2);
+  }
+
+  .na-bubble:focus-visible {
+    outline: 3px solid rgba(56, 189, 248, 0.9);
+    outline-offset: 3px;
+  }
+
+  /* Active indicator dot on bubble */
+  .na-bubble-dot {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: #34d399;
+    border: 2px solid rgba(2, 6, 23, 0.9);
+  }
+
+  /* ── Hint card (heuristic suggestion near bubble) ─────────────── */
+  .na-hint-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 10px;
+    padding: 14px 16px;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background:
+      linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.92)),
+      radial-gradient(circle at top, rgba(45, 212, 191, 0.1), transparent 60%);
+    box-shadow:
+      0 16px 48px rgba(2, 6, 23, 0.5),
+      0 0 0 1px rgba(125, 211, 252, 0.1);
+    backdrop-filter: blur(20px);
+    max-width: 260px;
+  }
+
+  .na-hint-text {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #e2e8f0;
+  }
+
+  .na-hint-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .na-hint-btn {
+    flex: 1;
+    border: 0;
+    border-radius: 14px;
+    padding: 9px 12px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: opacity 150ms ease, transform 150ms ease;
+  }
+
+  .na-hint-btn:hover {
+    transform: translateY(-1px);
+    opacity: 0.88;
+  }
+
+  .na-hint-yes {
+    color: #020617;
+    background: linear-gradient(135deg, #67e8f9, #34d399);
+  }
+
+  .na-hint-no {
+    color: rgba(148, 163, 184, 0.9);
+    background: rgba(255, 255, 255, 0.06);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  }
+
+  /* ── Footer actions row (replaces Page Comfort Mode section) ──── */
+  .na-footer-row {
+    display: flex;
+    gap: 8px;
+    padding-top: 2px;
+  }
+
+  .na-icon-btn {
+    flex: none;
+    min-width: 42px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+  }
+
+  /* Primary walkthrough chip variant */
+  .na-suggestion-primary {
+    border-color: rgba(56, 189, 248, 0.3);
+    background: rgba(56, 189, 248, 0.1);
+    color: #bae6fd;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .na-suggestion-primary:hover:not(:disabled) {
+    background: rgba(56, 189, 248, 0.18);
+    border-color: rgba(56, 189, 248, 0.45);
   }
 
   .na-ai-badge {

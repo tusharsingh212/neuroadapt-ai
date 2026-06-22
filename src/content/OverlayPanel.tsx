@@ -5,13 +5,13 @@ import { DEFAULT_OVERLAY_SETTINGS } from "@/shared/types";
 import { loadOverlaySettings, applyOverlaySettings, saveOverlaySettings } from "@/shared/overlayManager";
 
 const OVERLAY_LABELS: Record<OverlayMode, { label: string; desc: string }> = {
-  focusMode: { label: "Focus Mode", desc: "Dim everything except the active control" },
-  readingMode: { label: "Reading Mode", desc: "Extract readable content, hide distractions" },
-  reducedClutter: { label: "Reduced Clutter", desc: "Hide sidebars, ads, secondary content" },
-  largeTargets: { label: "Large Targets", desc: "Make all clickable areas bigger" },
-  highContrast: { label: "High Contrast", desc: "Black background, white text" },
-  dyslexiaSpacing: { label: "Dyslexia Spacing", desc: "Wider spacing and larger text" },
-  simplifiedLabels: { label: "Simplified Labels", desc: "Explain confusing terms in plain language" }
+  focusMode: { label: "Focus on one thing", desc: "Dim the rest of the page so you can focus on what you're doing" },
+  readingMode: { label: "Reading view", desc: "Show only the main text, hide everything else" },
+  reducedClutter: { label: "Hide distractions", desc: "Remove sidebars, ads, and extra content" },
+  largeTargets: { label: "Bigger buttons", desc: "Make all buttons and links easier to tap or click" },
+  highContrast: { label: "High contrast", desc: "Dark background with bright text — easier on the eyes" },
+  dyslexiaSpacing: { label: "Easier to read", desc: "More space between letters and lines" },
+  simplifiedLabels: { label: "Explain unclear words", desc: "Replace confusing labels with plain, simple language" }
 };
 
 export function OverlayPanel({ expanded: initialExpanded }: { expanded?: boolean }): JSX.Element {
@@ -42,7 +42,7 @@ export function OverlayPanel({ expanded: initialExpanded }: { expanded?: boolean
           aria-expanded={expanded}
         >
           <Eye size={14} />
-          <span>Accessibility Overlays {activeCount > 0 ? `(${activeCount})` : ""}</span>
+          <span>Reading &amp; display options {activeCount > 0 ? `(${activeCount} on)` : ""}</span>
         </button>
       </div>
 
