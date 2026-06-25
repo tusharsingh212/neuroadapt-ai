@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { applyAdaptation, resetAdaptation } from "@/shared/adaptation";
 import { sendRuntimeMessage } from "@/shared/chrome";
-import { applyDomActions, resetDomActions } from "@/shared/elementGuide";
+import { applyDomActions, resetDomActions, clearGuidanceHighlights } from "@/shared/elementGuide";
 import { HeuristicObserver, type HeuristicSignal } from "@/shared/heuristics";
 import { buildAnalysisReport, inspectPage } from "@/shared/pageInsights";
 import { extractPageSummary } from "@/shared/pageSummary";
@@ -69,8 +69,6 @@ export function ContentApp(): JSX.Element {
   const [collapsed, setCollapsed] = useState(false);
   // visible: user has intentionally opened the panel OR extension is enabled from popup
   const [visible, setVisible] = useState(false);
-  // panelDomVisible: controls DOM visibility; delayed on close so exit animation can finish
-  const [panelDomVisible, setPanelDomVisible] = useState(false);
 
   const [comparison, setComparison] = useState<"original" | "adapted">(DEFAULT_SETTINGS.comparisonMode);
   const [busy, setBusy] = useState<"analyze" | "adapt" | "reset" | null>(null);
@@ -88,12 +86,6 @@ export function ContentApp(): JSX.Element {
   const showAssistant = visible || settings.enabled;
   const panelOpen = showAssistant && !collapsed;
   const bubbleVisible = !panelOpen;
-
-  // Bring the panel into DOM as soon as it should open;
-  // keep it in DOM after close until exit animation finishes (onAnimationComplete removes it)
-  useEffect(() => {
-    if (panelOpen) setPanelDomVisible(true);
-  }, [panelOpen]);
 
   useEffect(() => {
     settingsRef.current = settings;
@@ -307,7 +299,7 @@ export function ContentApp(): JSX.Element {
     setMessages(["Original interface restored."]);
     setRuntime({ state: "idle", messages: ["Original interface restored."], lastUpdated: Date.now() });
     setVisible(false);
-    resetAdaptation(document); resetDomActions(document);
+    resetAdaptation(document); resetDomActions(document); clearGuidanceHighlights(document);
     setBusy(null);
   }
 
@@ -368,8 +360,7 @@ export function ContentApp(): JSX.Element {
           Visibility + pointer-events toggle it on/off; framer-motion
           animates the opacity/position so enter/exit feel polished.
       ───────────────────────────────────────────────────────────────── */}
-      {panelDomVisible ? (
-        <motion.div
+      <motion.div
           className="na-shell"
           initial={false}
           animate={panelOpen
@@ -377,10 +368,6 @@ export function ContentApp(): JSX.Element {
             : { opacity: 0, y: 24, scale: 0.98 }
           }
           transition={{ duration: 0.24 }}
-          onAnimationComplete={() => {
-            // Remove from DOM only after the exit animation finishes
-            if (!panelOpen) setPanelDomVisible(false);
-          }}
           style={{
             visibility: panelOpen ? "visible" : "hidden",
             pointerEvents: panelOpen ? "auto" : "none",
@@ -469,7 +456,6 @@ export function ContentApp(): JSX.Element {
             </div>
           </div>
         </motion.div>
-      ) : null}
 
       {/* ── Bubble + hint card ─────────────────────────────────────── */}
       {bubbleVisible ? (
@@ -524,10 +510,12 @@ export function ContentApp(): JSX.Element {
         </motion.div>
       ) : null}
 
-      {/* Task sidebar — fixed left panel during active sessions */}
-      <TaskSidebar onRequestReanalysis={() => {
-        if (settings.enabled) applyAdaptation(document, settings, inspectPage(document));
-      }} />
+      {/* Task sidebar — shown only when the main panel is collapsed so goal info isn't duplicated */}
+      {!panelOpen ? (
+        <TaskSidebar onRequestReanalysis={() => {
+          if (settings.enabled) applyAdaptation(document, settings, inspectPage(document));
+        }} />
+      ) : null}
     </div>
   );
 }

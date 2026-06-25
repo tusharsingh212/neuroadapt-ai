@@ -66,6 +66,7 @@ function ensureGuideStylesForNode(node: Node): void {
 }
 
 export function clearGuidanceHighlights(doc: Document = document): void {
+  engineClear();
   for (const element of queryDeepAll<HTMLElement>("[data-neuroadapt-guided], [data-neuroadapt-field-guided]", doc)) {
     for (const attr of GUIDE_ATTRS) {
       element.removeAttribute(attr);

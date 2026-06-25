@@ -1,6 +1,3 @@
-// Phase 2: All AI calls in this file will be replaced with requests to the
-// NeuroAdapt backend API. See src/shared/apiClient.ts for the planned interface.
-// Until then, set BACKEND_GEMINI_API_KEY below to enable AI features during development.
 
 import { DEFAULT_SETTINGS } from "@/shared/types";
 import { analyzeWithGemini } from "@/shared/gemini";
