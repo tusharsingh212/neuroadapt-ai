@@ -115,6 +115,9 @@ export interface ChatMessage {
   timestamp: number;
   checklist?: ChecklistItem[];
   formFields?: FormFieldGuide[];
+  reason?: string;
+  confidence?: "high" | "medium" | "low";
+  isOfficialSource?: boolean;
 }
 
 export interface ChecklistItem {
@@ -179,6 +182,9 @@ export interface TaskAssistantResult {
   goalSession?: GoalSession;
   estimatedTime?: string;
   estimatedSteps?: number;
+  reason?: string;
+  confidence?: "high" | "medium" | "low";
+  isOfficialSource?: boolean;
 }
 
 export type OverlayMode =

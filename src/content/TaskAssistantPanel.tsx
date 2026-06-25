@@ -12,13 +12,16 @@ import {
   initGoalSession,
   startSession,
   getSession,
+  subscribe as subscribeToSession,
   updateChecklist,
   advanceChecklist,
   isActive,
-  isOnSamePage,
   completeSession,
-  pauseSession
+  cancelSession,
+  resumeSession,
+  updateSessionUrl
 } from "@/shared/goalSession";
+import { classifyPage, type PageClassification } from "@/shared/pageClassifier";
 import { PageObserver } from "@/shared/pageObserver";
 import type { TaskAssistantMessage } from "@/shared/messaging";
 import type { ChatMessage, ChecklistItem, ConfusionSignal, ExtensionSettings, PersonaId, TaskAssistantResult } from "@/shared/types";
@@ -42,12 +45,6 @@ const FIRST_TIME_SUGGESTIONS = [
   "What is this page for?"
 ];
 
-function buildWelcomeMessage(isFirstTimeMode: boolean): string {
-  if (isFirstTimeMode) {
-    return "Hello! I'm here to help. Tell me what you'd like to do — for example, \"Help me apply\" or \"What is this page for?\"";
-  }
-  return "Hello! I'm here to help. What would you like to do on this page? You can ask me anything.";
-}
 
 function createId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -88,6 +85,49 @@ function ChecklistView({ items }: { items: ChecklistItem[] }): JSX.Element | nul
   );
 }
 
+function GoalCard({ session, onCancel }: { session: import("@/shared/types").GoalSession; onCancel: () => void }): JSX.Element {
+  const completed = session.checklist.filter((i) => i.status === "completed").length;
+  const total = session.checklist.length;
+  const isDone = session.status === "completed";
+
+  return (
+    <div className="na-goal-card" role="region" aria-label="Current goal">
+      <div className="na-goal-card-head">
+        <span className="na-goal-card-title">{session.goal}</span>
+        <button type="button" className="na-goal-cancel" onClick={onCancel} aria-label="Cancel goal">×</button>
+      </div>
+
+      {isDone ? (
+        <div className="na-goal-complete">✓ Task complete!</div>
+      ) : total > 0 ? (
+        <div className="na-goal-progress">
+          <span className="na-goal-step-count">Step {Math.min(completed + 1, total)} of {total}</span>
+          <div className="na-goal-bar">
+            <div className="na-goal-bar-fill" style={{ width: `${Math.round((completed / total) * 100)}%` }} />
+          </div>
+        </div>
+      ) : null}
+
+      {total > 0 ? (
+        <ol className="na-goal-steps" aria-label="Task steps">
+          {session.checklist.map((item) => (
+            <li
+              key={item.id}
+              className={`na-goal-step na-goal-step-${item.status}`}
+              aria-current={item.status === "active" ? "step" : undefined}
+            >
+              <span className="na-goal-step-icon" aria-hidden="true">
+                {item.status === "completed" ? "✓" : item.status === "active" ? "→" : "□"}
+              </span>
+              <span>{item.label}</span>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </div>
+  );
+}
+
 const PRIMARY_ACTION_KEYWORDS = [
   "continue", "next", "submit", "apply", "register", "sign up", "create",
   "book", "schedule", "confirm", "save", "send", "pay", "checkout",
@@ -112,17 +152,25 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
   const resolvedPersona = settings.persona;
   const isFirstTimeMode = resolvedPersona === "firstTime";
 
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([{
-    id: "welcome",
-    role: "assistant",
-    content: buildWelcomeMessage(isFirstTimeMode),
-    timestamp: Date.now()
-  }]);
+  const classificationRef = useRef<PageClassification | null>(null);
+  const [showProactive, setShowProactive] = useState(true);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => {
+    const ctx = extractPageContext(document, resolvedPersona);
+    const cls = classifyPage(ctx);
+    classificationRef.current = cls;
+    return [{ id: "welcome", role: "assistant" as const, content: cls.welcomeMessage, timestamp: Date.now() }];
+  });
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [walkthroughMode, setWalkthroughMode] = useState(false);
-  const [goalActive, setGoalActive] = useState(isActive());
+  const [sessionSnapshot, setSessionSnapshot] = useState<import("@/shared/types").GoalSession | null>(() => getSession());
+  const goalActive = sessionSnapshot !== null && (
+    sessionSnapshot.status === "active" ||
+    sessionSnapshot.status === "preview" ||
+    sessionSnapshot.status === "paused"
+  );
+  const showGoalCard = sessionSnapshot !== null && sessionSnapshot.status !== "cancelled";
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -136,6 +184,7 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
   // hasScanRef persists across panel open/close since the component stays mounted
   const hasScanRef = useRef(false);
   const onPageSummaryRef = useRef(onPageSummary);
+  const lastRecommendedRef = useRef<string | null>(null);
 
   useEffect(() => { checklistRef.current = checklist; }, [checklist]);
   useEffect(() => { chatMessagesRef.current = chatMessages; }, [chatMessages]);
@@ -143,6 +192,28 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
   useEffect(() => { confusionSignalsRef.current = confusionSignals; }, [confusionSignals]);
   useEffect(() => { onPageSummaryRef.current = onPageSummary; }, [onPageSummary]);
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages, loading]);
+
+  // Keep sessionSnapshot in sync with sessionStorage
+  useEffect(() => subscribeToSession((s) => {
+    setSessionSnapshot(s);
+    if (s) setChecklist(s.checklist);
+  }), []);
+
+  // Restore an active/paused session when the panel first mounts
+  useEffect(() => {
+    const session = getSession();
+    if (!session || session.status === "cancelled" || session.status === "completed") return;
+    if (session.status === "paused") resumeSession();
+    setSessionSnapshot(session);
+    setChecklist(session.checklist);
+    onGoalChange?.();
+    const activeStep = session.checklist.find((i) => i.status === "active");
+    const msg = activeStep
+      ? `Resuming: "${session.goal}" — current step: ${activeStep.label}`
+      : `Resuming: "${session.goal}"`;
+    setChatMessages((prev) => [...prev, { id: `restore-${Date.now()}`, role: "assistant", content: msg, timestamp: Date.now() }]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Page observer for continuous re-analysis when goal is active
   useEffect(() => {
@@ -156,23 +227,32 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
 
       if (event.type === "navigation") {
         clearGuidanceHighlights(document);
-        const session = getSession();
-        if (session && !isOnSamePage()) {
-          pauseSession();
-          setGoalActive(false);
-          onGoalChange?.();
-        }
+        // Update the stored URL so future isOnSamePage() calls are correct
+        updateSessionUrl(window.location.href);
+        // Re-analyze the new page and continue the goal automatically
+        window.setTimeout(async () => {
+          if (!runAssistantRef.current) return;
+          setLoading(true);
+          try {
+            const result = await runAssistantRef.current(
+              "I just navigated to a new page. What should I do next to continue my goal?",
+              chatMessagesRef.current
+            );
+            if (result) handleResponseRef.current?.(result);
+          } catch { /* ignore */ }
+          finally { setLoading(false); }
+        }, 1000);
         return;
       }
 
-      if (event.type !== "click" && event.type !== "dom") return;
+      if (event.type !== "click" && event.type !== "dom" && event.type !== "formChange") return;
 
       if (event.type === "click" && event.target) {
         if (!isPrimaryActionClick(event.target)) return;
       }
 
       advanceChecklist();
-      const question = "The page changed. Determine if the previous step was completed and tell me the next single step.";
+      const question = "The page has changed. Determine if my previous step is complete and tell me the single next action.";
       setLoading(true);
       runAssistantRef.current?.(question, chatMessagesRef.current, true).then((result) => {
         if (result) handleResponseRef.current?.(result, true);
@@ -219,15 +299,27 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
   );
 
   const handleResponse = useCallback((result: TaskAssistantResult, silent = false) => {
-    applyGuidanceFromResponse(
-      document,
-      result.highlightElementRef,
-      result.highlightTooltip,
-      result.formFields,
-      result.customCss,
-      result.domActions,
-      result.candidates
-    );
+    // Low confidence: never highlight, surface uncertainty message instead
+    const isLowConfidence = result.confidence === "low";
+    // Repetition guard: skip highlight if same element was already recommended
+    const isRepeat = result.highlightElementRef != null &&
+      result.highlightElementRef === lastRecommendedRef.current;
+
+    if (!isLowConfidence && !isRepeat && result.highlightElementRef) {
+      applyGuidanceFromResponse(
+        document,
+        result.highlightElementRef,
+        result.highlightTooltip,
+        result.formFields,
+        result.customCss,
+        result.domActions,
+        result.candidates
+      );
+      lastRecommendedRef.current = result.highlightElementRef;
+    } else if (!result.highlightElementRef) {
+      // No highlight requested — still apply form/dom actions if present
+      applyGuidanceFromResponse(document, undefined, undefined, result.formFields, result.customCss, result.domActions);
+    }
 
     if (result.checklist.length > 0) {
       setChecklist((prev) => mergeChecklistProgress(prev, result.checklist));
@@ -239,26 +331,48 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
         ? result.checklist.map((c) => c.label)
         : ["Find the right section", "Fill in the form", "Review and submit"];
       initGoalSession(result.taskLabel, steps, result.estimatedTime, result.estimatedSteps);
-      setGoalActive(true);
+      startSession(); // immediately activate — no "preview" gate
       onGoalChange?.();
     }
 
     const allDone = result.checklist.length > 0 && result.checklist.every((c) => c.status === "completed");
     if (allDone) {
       completeSession();
-      setGoalActive(false);
       onGoalChange?.();
     }
 
-    if (silent && result.highlightElementRef) return;
+    // Graceful recovery: if the expected element wasn't found, re-analyze after a short delay
+    if (!result.elementFound && result.highlightElementRef && (walkthroughRef.current || isActive())) {
+      window.setTimeout(async () => {
+        if (!runAssistantRef.current) return;
+        setLoading(true);
+        try {
+          const recovery = await runAssistantRef.current(
+            "The expected element wasn't found on the page. It may have changed. What should I do now?",
+            chatMessagesRef.current
+          );
+          if (recovery) handleResponseRef.current?.(recovery);
+        } catch { /* ignore */ }
+        finally { setLoading(false); }
+      }, 1500);
+    }
+
+    if (silent && !isLowConfidence && result.highlightElementRef) return;
+
+    const effectiveReply = isLowConfidence
+      ? "I'm not fully confident which option is correct. Please verify before continuing."
+      : (result.walkthroughStep || result.reply);
 
     const assistantMessage: ChatMessage = {
       id: createId(),
       role: "assistant",
-      content: result.walkthroughStep || result.reply,
+      content: effectiveReply,
       timestamp: Date.now(),
       checklist: result.checklist,
-      formFields: result.formFields
+      formFields: result.formFields,
+      reason: isLowConfidence ? undefined : result.reason,
+      confidence: result.confidence,
+      isOfficialSource: result.isOfficialSource
     };
 
     setChatMessages((prev) => {
@@ -283,6 +397,7 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
       const trimmed = text.trim();
       if (!trimmed || loading) return;
 
+      setShowProactive(false);
       const userMessage: ChatMessage = { id: createId(), role: "user", content: trimmed, timestamp: Date.now() };
       const history = [...chatMessages, userMessage];
       setChatMessages(history);
@@ -328,7 +443,6 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
         // handleResponse adds the assistant reply — no need for a fake user message
         handleResponse(result);
         if (result.goalSession || result.taskLabel) {
-          setGoalActive(true);
           onGoalChange?.();
         }
       }
@@ -337,6 +451,13 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
     }
   }, [chatMessages, runAssistant, handleResponse, onStatus, onGoalChange]);
 
+  const handleCancelGoal = useCallback(() => {
+    cancelSession();
+    clearGuidanceHighlights(document);
+    setChecklist([]);
+    onGoalChange?.();
+  }, [onGoalChange]);
+
   // Auto-scan: give user a 1-sentence page context on first open.
   // hasScanRef persists across close/reopen since the component stays mounted.
   useEffect(() => {
@@ -344,19 +465,21 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
     hasScanRef.current = true;
     const timer = setTimeout(async () => {
       if (!runAssistantRef.current) return;
+      const cls = classificationRef.current;
+      const scanQuestion = cls?.autoScanQuestion ?? "In one sentence, what is this page for and what can I do here?";
       try {
         setLoading(true);
-        const result = await runAssistantRef.current(
-          "In one sentence, what is this page for and what can I do here?",
-          chatMessagesRef.current,
-          true
-        );
-        if (result?.reply) {
+        const result = await runAssistantRef.current(scanQuestion, chatMessagesRef.current, true);
+        if (!result) return;
+        // Apply highlight when AI identifies an official result or key element
+        if (result.highlightElementRef) {
+          applyGuidanceFromResponse(document, result.highlightElementRef, result.highlightTooltip ?? undefined);
+        }
+        if (result.reply) {
           setChatMessages((prev) => [
             ...prev,
             { id: "auto-scan", role: "assistant" as const, content: result.reply, timestamp: Date.now() }
           ]);
-          // Surface the summary to ContentApp so TTS has meaningful text to read
           onPageSummaryRef.current?.(result.reply);
         }
       } catch {
@@ -377,8 +500,11 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
 
   function handleSubmit(event: React.FormEvent): void { event.preventDefault(); sendMessage(input); }
   function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>): void {
+    // Stop propagation so Gmail/YouTube/etc. capture listeners don't steal keypresses
+    event.stopPropagation();
     if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendMessage(input); }
   }
+  function stopKeyProp(event: React.SyntheticEvent): void { event.stopPropagation(); }
 
   return (
     <div className="na-section na-chat-section">
@@ -391,19 +517,45 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
 
       <div className="na-chat-body">
 
-        {walkthroughMode ? (
+        {/* Goal Card — shown whenever a goal session exists (active, paused, or complete) */}
+        {showGoalCard && sessionSnapshot ? (
+          <GoalCard session={sessionSnapshot} onCancel={handleCancelGoal} />
+        ) : walkthroughMode ? (
           <div className="na-walkthrough-badge">
             <Sparkles size={12} /> Walkthrough active — complete each step and I'll guide you forward.
           </div>
         ) : null}
 
-        {goalActive && !walkthroughMode && getSession()?.status === "active" ? (
-          <div className="na-walkthrough-badge">
-            <Sparkles size={12} /> Goal in progress — I'll guide you as the page changes.
+        {/* Proactive recommendation chip — dismissed on first user message or click */}
+        {showProactive && !showGoalCard && !walkthroughMode && classificationRef.current?.proactiveLabel ? (
+          <div className="na-proactive-action">
+            <span className="na-proactive-label">{classificationRef.current.proactiveLabel}</span>
+            <button
+              type="button"
+              className="na-proactive-btn"
+              disabled={loading}
+              onClick={() => {
+                setShowProactive(false);
+                const cls = classificationRef.current;
+                if (cls?.proactiveRef) {
+                  applyGuidanceFromResponse(document, cls.proactiveRef, cls.proactiveLabel ?? undefined);
+                }
+              }}
+            >
+              Show me
+            </button>
+            <button
+              type="button"
+              className="na-proactive-dismiss"
+              onClick={() => setShowProactive(false)}
+              aria-label="Dismiss suggestion"
+            >
+              ×
+            </button>
           </div>
         ) : null}
 
-        {!walkthroughMode && !goalActive ? (
+        {!walkthroughMode && !goalActive && !showGoalCard ? (
           <div className="na-suggestions" aria-label="Suggested actions">
             <button
               type="button"
@@ -429,7 +581,8 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
           </div>
         ) : null}
 
-        <ChecklistView items={checklist} />
+        {/* ChecklistView only for walkthrough mode without an active goal session */}
+        {!showGoalCard ? <ChecklistView items={checklist} /> : null}
 
         {confusionSignals.length > 0 ? (
           <div className="na-api-banner" role="alert" style={{ borderColor: "rgba(251, 191, 36, 0.4)", background: "rgba(251, 191, 36, 0.08)" }}>
@@ -442,7 +595,16 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
         <div className="na-chat-messages" role="log" aria-live="polite" aria-relevant="additions">
           {chatMessages.map((message) => (
             <div key={message.id} className={`na-chat-bubble ${message.role === "user" ? "na-chat-user" : "na-chat-assistant"}`}>
+              {message.isOfficialSource ? (
+                <div className="na-official-badge">✓ Official Source</div>
+              ) : null}
               {message.content}
+              {message.reason ? (
+                <div className="na-reason">{message.reason}</div>
+              ) : null}
+              {message.confidence === "high" && message.role === "assistant" ? (
+                <div className="na-confidence na-confidence-high">✓ High confidence</div>
+              ) : null}
               {message.formFields && message.formFields.length > 0 ? (
                 <div className="na-form-hints">
                   {message.formFields.slice(0, 4).map((field) => (
@@ -468,6 +630,8 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={handleKeyDown}
+            onKeyUp={stopKeyProp}
+            onKeyPress={stopKeyProp}
             placeholder={isFirstTimeMode
               ? 'Type your question... e.g. "Help me apply here"'
               : 'Type your question... e.g. "Help me fill this form"'

@@ -156,9 +156,6 @@ const GLOBAL_ADAPTATION_CSS = `
       padding: 0.9rem 1rem !important;
       border-radius: 16px !important;
       font-size: 1rem !important;
-      outline: 2px solid rgba(125, 211, 252, 0.45) !important;
-      outline-offset: 2px !important;
-      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08) !important;
     }
 
     html.na-mode-elderly a[href] {
@@ -184,16 +181,6 @@ const GLOBAL_ADAPTATION_CSS = `
       scroll-margin-top: 24px !important;
     }
 
-    html.na-mode-firstTime [data-neuroadapt-hint='true'] {
-      position: relative !important;
-      box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.42), 0 16px 30px rgba(2, 6, 23, 0.18) !important;
-    }
-
-    html.na-mode-firstTime [data-neuroadapt-primary='true'] {
-      outline: 3px solid rgba(16, 185, 129, 0.45) !important;
-      outline-offset: 3px !important;
-    }
-
     html.na-mode-firstTime [data-neuroadapt-step] {
       position: relative !important;
       isolation: isolate !important;
@@ -216,12 +203,6 @@ const GLOBAL_ADAPTATION_CSS = `
       box-shadow: 0 14px 30px rgba(15, 23, 42, 0.16) !important;
       pointer-events: none !important;
       white-space: normal !important;
-    }
-
-    html.na-mode-firstTime [data-neuroadapt-field-guide='true'] {
-      border-color: rgba(16, 185, 129, 0.65) !important;
-      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.16) !important;
-      background-image: linear-gradient(90deg, rgba(236, 253, 245, 0.7), transparent) !important;
     }
 
     html.na-preview-original body {
@@ -307,10 +288,7 @@ function markInteractiveTargets(doc: Document, persona: PersonaId, insights: Pag
         "font-size": "1.05rem",
         "line-height": "1.5",
         "border-radius": "18px",
-        "font-weight": "700",
-        outline: "2px solid rgba(125, 211, 252, 0.45)",
-        "outline-offset": "2px",
-        "box-shadow": "0 10px 22px rgba(15, 23, 42, 0.08)"
+        "font-weight": "700"
       });
     }
 
@@ -325,10 +303,7 @@ function markInteractiveTargets(doc: Document, persona: PersonaId, insights: Pag
         "font-weight": "700",
         "min-height": "48px",
         padding: "0.85rem 1rem",
-        "border-radius": "16px",
-        outline: "3px solid rgba(16, 185, 129, 0.5)",
-        "outline-offset": "3px",
-        "box-shadow": "0 16px 32px rgba(16, 185, 129, 0.16)"
+        "border-radius": "16px"
       });
     }
 
@@ -377,13 +352,6 @@ function emphasizePageSections(doc: Document, persona: PersonaId): void {
       section.setAttribute("data-neuroadapt-secondary", "true");
     }
 
-    if (persona === "elderly") {
-      applyInlineStyles(section, {
-        "border-radius": "20px",
-        padding: "0.35rem"
-      });
-    }
-
     if (persona === "firstTime" && section.hasAttribute("data-neuroadapt-secondary")) {
       applyInlineStyles(section, {
         opacity: "0.42",
@@ -410,13 +378,6 @@ function guideFirstTimeForms(doc: Document): void {
       field.setAttribute("data-neuroadapt-tooltip", label.trim());
       field.setAttribute("title", `Fill in: ${label.trim()}`);
     }
-
-    applyInlineStyles(field, {
-      "min-height": "48px",
-      padding: "0.85rem 1rem",
-      "border-radius": "14px",
-      "font-size": "1rem"
-    });
   });
 }
 

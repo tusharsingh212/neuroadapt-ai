@@ -1080,4 +1080,225 @@ export const contentStyles = `
       max-height: 50vh;
     }
   }
+
+  /* ---- Goal Card (inline in panel) ---- */
+  .na-goal-card {
+    border-radius: 16px;
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    background: rgba(16, 185, 129, 0.05);
+    padding: 12px 14px;
+    margin-bottom: 10px;
+  }
+
+  .na-goal-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .na-goal-card-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #ecfdf5;
+    line-height: 1.4;
+  }
+
+  .na-goal-cancel {
+    background: none;
+    border: 0;
+    color: rgba(148, 163, 184, 0.55);
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    padding: 0 2px;
+    flex: none;
+    transition: color 0.15s ease;
+  }
+
+  .na-goal-cancel:hover {
+    color: rgba(148, 163, 184, 0.9);
+  }
+
+  .na-goal-progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .na-goal-step-count {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: rgba(148, 163, 184, 0.75);
+    white-space: nowrap;
+  }
+
+  .na-goal-bar {
+    flex: 1;
+    height: 3px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.07);
+    overflow: hidden;
+  }
+
+  .na-goal-bar-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: #34d399;
+    transition: width 0.35s ease;
+  }
+
+  .na-goal-steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 4px;
+  }
+
+  .na-goal-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    font-size: 11px;
+    line-height: 1.5;
+    color: rgba(148, 163, 184, 0.55);
+  }
+
+  .na-goal-step-active {
+    color: #ecfdf5;
+    font-weight: 600;
+  }
+
+  .na-goal-step-completed {
+    color: rgba(148, 163, 184, 0.45);
+  }
+
+  .na-goal-step-completed span:last-child {
+    text-decoration: line-through;
+  }
+
+  .na-goal-step-icon {
+    flex: none;
+    width: 12px;
+    font-size: 11px;
+    margin-top: 1px;
+    font-style: normal;
+  }
+
+  .na-goal-step-active .na-goal-step-icon {
+    color: #34d399;
+  }
+
+  .na-goal-step-completed .na-goal-step-icon {
+    color: #34d399;
+  }
+
+  .na-goal-complete {
+    margin-top: 8px;
+    padding: 7px 10px;
+    border-radius: 10px;
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    color: #a7f3d0;
+    font-size: 11px;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  /* ---- Proactive action chip ---- */
+  .na-proactive-action {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 10px;
+    padding: 8px 10px;
+    border-radius: 14px;
+    border: 1px solid rgba(125, 211, 252, 0.22);
+    background: rgba(125, 211, 252, 0.07);
+  }
+
+  .na-proactive-label {
+    flex: 1;
+    font-size: 11px;
+    font-weight: 600;
+    color: #bae6fd;
+    line-height: 1.4;
+  }
+
+  .na-proactive-btn {
+    appearance: none;
+    border: 0;
+    border-radius: 10px;
+    padding: 5px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #020617;
+    background: linear-gradient(135deg, #67e8f9, #34d399);
+    cursor: pointer;
+    white-space: nowrap;
+    flex: none;
+  }
+
+  .na-proactive-btn:hover:not(:disabled) {
+    opacity: 0.88;
+  }
+
+  .na-proactive-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .na-proactive-dismiss {
+    background: none;
+    border: 0;
+    color: rgba(148, 163, 184, 0.5);
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+    padding: 0 2px;
+    flex: none;
+  }
+
+  .na-proactive-dismiss:hover {
+    color: rgba(148, 163, 184, 0.85);
+  }
+
+  /* ---- Recommendation trust indicators ---- */
+  .na-official-badge {
+    display: inline-block;
+    margin-bottom: 5px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    color: #a7f3d0;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+
+  .na-reason {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    font-size: 10px;
+    color: rgba(148, 163, 184, 0.75);
+    font-style: italic;
+    line-height: 1.5;
+  }
+
+  .na-confidence {
+    margin-top: 5px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+
+  .na-confidence-high {
+    color: rgba(52, 211, 153, 0.75);
+  }
 `;
