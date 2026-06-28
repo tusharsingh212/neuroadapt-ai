@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import { applyAdaptation, resetAdaptation } from "@/shared/adaptation";
 import { sendRuntimeMessage } from "@/shared/chrome";
 import { applyDomActions, resetDomActions, clearGuidanceHighlights } from "@/shared/elementGuide";
+import { simplifyPage } from "@/shared/simplifyPage";
 import { HeuristicObserver, type HeuristicSignal } from "@/shared/heuristics";
 import { buildAnalysisReport, inspectPage } from "@/shared/pageInsights";
 import { extractPageSummary } from "@/shared/pageSummary";
@@ -82,6 +83,7 @@ export function ContentApp(): JSX.Element {
 
   const settingsRef = useRef(settings);
   const debounceRef = useRef<number | null>(null);
+  const simplifyCleanupRef = useRef<(() => void) | null>(null);
 
   const showAssistant = visible || settings.enabled;
   const panelOpen = showAssistant && !collapsed;
@@ -196,6 +198,10 @@ export function ContentApp(): JSX.Element {
             persona: message.payload?.persona ?? settingsRef.current.persona,
             comparisonMode: "adapted"
           };
+          // 1. Instant visual transformation — happens before Gemini
+          simplifyCleanupRef.current?.();
+          simplifyCleanupRef.current = simplifyPage(document, nextSettings.persona);
+          // 2. Gemini analysis runs in background; page already looks different
           const nextInsights = inspectPage(document);
           const nextAnalysis = await runGeminiAnalysis(nextSettings);
           const nextFeed = feedLines(nextAnalysis, nextInsights);
@@ -205,7 +211,6 @@ export function ContentApp(): JSX.Element {
           setAnalysis(nextAnalysis); setMessages(nextFeed); setRuntime(nextRuntime);
           setVisible(true);
           saveSettings(nextSettings).catch(() => undefined);
-          applyAdaptation(document, nextSettings, nextInsights);
           sendResponse({ settings: nextSettings, insights: nextInsights, analysis: nextAnalysis, runtime: nextRuntime } satisfies NeuroAdaptStateMessage);
         })();
         return true;
@@ -222,6 +227,8 @@ export function ContentApp(): JSX.Element {
         setVisible(false);
         saveSettings(nextSettings).catch(() => undefined);
         resetAdaptation(document); resetDomActions(document);
+        simplifyCleanupRef.current?.();
+        simplifyCleanupRef.current = null;
         sendResponse({ settings: nextSettings, insights: nextInsights, analysis: nextAnalysis, runtime: nextRuntime } satisfies NeuroAdaptStateMessage);
         return false;
       }
@@ -269,8 +276,9 @@ export function ContentApp(): JSX.Element {
       setMessages((current) => [msg, ...current].slice(0, 5));
       return heuristicReport;
     }
-    if (response.analysis.customCss || response.analysis.domActions?.length) {
-      applyDomActions(document, response.analysis.domActions ?? [], response.analysis.customCss);
+    // Persona CSS is already injected by simplifyPage; only apply Gemini's page-specific output
+    if (response.analysis.customCss || (response.analysis.domActions?.length ?? 0) > 0) {
+      applyDomActions(document, response.analysis.domActions ?? [], response.analysis.customCss || undefined);
     }
     return buildAnalysisReport(nextSettings, nextInsights, response.analysis);
   }
@@ -279,13 +287,16 @@ export function ContentApp(): JSX.Element {
     setBusy("adapt");
     const nextSettings: ExtensionSettings = { ...settingsRef.current, enabled: true, comparisonMode: "adapted" };
     await persistSettings(nextSettings);
+    // 1. Instant visual transformation
+    simplifyCleanupRef.current?.();
+    simplifyCleanupRef.current = simplifyPage(document, nextSettings.persona);
+    // 2. Gemini page-specific enhancements (after user already sees the change)
     const nextInsights = inspectPage(document);
     const nextAnalysis = await runGeminiAnalysis(nextSettings);
     const nextFeed = feedLines(nextAnalysis, nextInsights);
     setInsights(nextInsights); setAnalysis(nextAnalysis); setMessages(nextFeed);
     setRuntime({ state: "done", messages: nextFeed, lastUpdated: Date.now() });
     setVisible(true);
-    applyAdaptation(document, nextSettings, nextInsights);
     setBusy(null);
   }
 
@@ -300,6 +311,8 @@ export function ContentApp(): JSX.Element {
     setRuntime({ state: "idle", messages: ["Original interface restored."], lastUpdated: Date.now() });
     setVisible(false);
     resetAdaptation(document); resetDomActions(document); clearGuidanceHighlights(document);
+    simplifyCleanupRef.current?.();
+    simplifyCleanupRef.current = null;
     setBusy(null);
   }
 

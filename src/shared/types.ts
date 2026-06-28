@@ -48,6 +48,8 @@ export interface ExtractedElement {
   fontSize?: number;
   contrastRatio?: number;
   smallTarget?: boolean;
+  id?: string;
+  cssClass?: string;
 }
 
 export interface PageSummary {
@@ -85,6 +87,7 @@ export interface AiIssue {
   category: string;
   description: string;
   evidence?: string;
+  cssSelector?: string;
 }
 
 export interface AiRecommendation {
@@ -218,7 +221,9 @@ export interface ConfusionSignal {
 export interface DomAction {
   action: "move" | "hide" | "style" | "addClass" | "changeText";
   elementRef: string;
+  cssSelector?: string;
   targetRef?: string;
+  targetSelector?: string;
   position?: "before" | "after" | "inside-start" | "inside-end";
   cssStyles?: Record<string, string>;
   classes?: string[];

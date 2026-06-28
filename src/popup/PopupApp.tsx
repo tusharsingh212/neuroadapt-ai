@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  AlertTriangle,
   ChevronDown,
   ChevronUp,
   ExternalLink,
@@ -16,6 +17,7 @@ import { asErrorMessage, injectContentScriptIfNeeded, queryActiveTab, sendToActi
 import {
   DEFAULT_SETTINGS,
   PERSONA_OPTIONS,
+  type AiIssue,
   type ExtensionSettings
 } from "@/shared/types";
 import { loadSettings, saveSettings } from "@/shared/storage";
@@ -24,6 +26,18 @@ import { Pill, SectionTitle, SoftCard } from "@/shared/ui";
 import type { NeuroAdaptStateMessage } from "@/shared/messaging";
 
 type BusyAction = "adapt" | "reset" | null;
+
+function severityColor(severity: AiIssue["severity"]): string {
+  if (severity === "high") return "text-rose-700 bg-rose-50 border-rose-200";
+  if (severity === "medium") return "text-amber-700 bg-amber-50 border-amber-200";
+  return "text-slate-600 bg-slate-50 border-slate-200";
+}
+
+function severityDot(severity: AiIssue["severity"]): string {
+  if (severity === "high") return "bg-rose-500";
+  if (severity === "medium") return "bg-amber-400";
+  return "bg-slate-400";
+}
 
 function statusToneClass(kind: "info" | "success" | "warning" | "error"): string {
   switch (kind) {
@@ -45,6 +59,8 @@ export function PopupApp(): JSX.Element {
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [foundIssues, setFoundIssues] = useState<AiIssue[]>([]);
+  const [issuesOpen, setIssuesOpen] = useState(true);
 
   useEffect(() => {
     let mounted = true;
@@ -79,16 +95,25 @@ export function PopupApp(): JSX.Element {
 
   async function helpWithPage(): Promise<void> {
     setBusyAction("adapt");
-    showStatus("Setting things up...", "info", false);
+    setFoundIssues([]);
+    showStatus("Analyzing page with AI...", "info", false);
     const next = { ...settings, enabled: true, comparisonMode: "adapted" as const };
     setSettings(next);
     try {
       const activeTab = await queryActiveTab();
       if (!activeTab?.id) throw new Error("No active tab available.");
       await injectContentScriptIfNeeded(activeTab.id);
-      await sendToActiveTab<NeuroAdaptStateMessage>({ type: "NA_ADAPT_PAGE", payload: { persona: next.persona } });
+      const response = await sendToActiveTab<NeuroAdaptStateMessage>({ type: "NA_ADAPT_PAGE", payload: { persona: next.persona } });
+      const issues = response?.analysis?.ai?.issues ?? [];
+      setFoundIssues(issues);
+      setIssuesOpen(true);
       await saveSettings(next);
-      showStatus("Done! Look for the chat icon in the bottom-right corner of the page.", "success");
+      showStatus(
+        issues.length > 0
+          ? `Found ${issues.length} issue${issues.length === 1 ? "" : "s"} — fixes applied.`
+          : "Done! Look for the chat icon in the bottom-right corner of the page.",
+        "success"
+      );
     } catch (error) {
       showStatus(`Could not connect: ${asErrorMessage(error)}`, "error");
     } finally {
@@ -97,6 +122,7 @@ export function PopupApp(): JSX.Element {
   }
 
   async function undoChanges(): Promise<void> {
+    setFoundIssues([]);
     setBusyAction("reset");
     showStatus("Restoring original page...", "info", false);
     const next = { ...settings, enabled: false, comparisonMode: "original" as const };
@@ -276,6 +302,65 @@ export function PopupApp(): JSX.Element {
             </AnimatePresence>
           </SoftCard>
         </motion.div>
+
+        {/* Issues panel */}
+        <AnimatePresence>
+          {foundIssues.length > 0 && (
+            <motion.div
+              key="issues-panel"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ duration: 0.2 }}
+            >
+              <SoftCard className="space-y-0">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500 transition hover:text-slate-700"
+                  onClick={() => setIssuesOpen((v) => !v)}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                    {foundIssues.length} Issue{foundIssues.length === 1 ? "" : "s"} Found &amp; Fixed
+                  </span>
+                  {issuesOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                </button>
+
+                <AnimatePresence>
+                  {issuesOpen && (
+                    <motion.div
+                      key="issues-list"
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.18 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="space-y-1.5 pt-2">
+                        {foundIssues.map((issue, i) => (
+                          <div
+                            key={i}
+                            className={`flex items-start gap-2 rounded-xl border px-3 py-2 ${severityColor(issue.severity)}`}
+                          >
+                            <span className={`mt-1.5 h-1.5 w-1.5 flex-none rounded-full ${severityDot(issue.severity)}`} />
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-bold uppercase tracking-wide opacity-70">
+                                {issue.category}
+                              </p>
+                              <p className="text-[11px] font-medium leading-snug">
+                                {issue.description}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </SoftCard>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
       </div>
     </main>

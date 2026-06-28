@@ -45,7 +45,8 @@ function issue(value: unknown): AiIssue {
     severity: priority(record.severity),
     category: asString(record.category, "accessibility"),
     description: asString(record.description, "Accessibility issue detected."),
-    evidence: asString(record.evidence) || undefined
+    evidence: asString(record.evidence) || undefined,
+    cssSelector: asString(record.cssSelector) || undefined
   };
 }
 
@@ -89,12 +90,16 @@ export function parseGeminiJson(text: string): unknown {
 function parseDomAction(value: unknown): DomAction | null {
   const record = asRecord(value);
   const action = asString(record.action);
+  if (!action || !DOM_ACTION_TYPES.includes(action)) return null;
   const elementRef = asString(record.elementRef);
-  if (!action || !elementRef || !DOM_ACTION_TYPES.includes(action)) return null;
+  const cssSelector = asString(record.cssSelector) || undefined;
+  if (!elementRef && !cssSelector) return null;
   return {
     action: action as DomAction["action"],
     elementRef,
+    cssSelector,
     targetRef: asString(record.targetRef) || undefined,
+    targetSelector: asString(record.targetSelector) || undefined,
     position: DOM_POSITIONS.includes(record.position as string) ? (record.position as DomAction["position"]) : undefined,
     cssStyles: record.cssStyles ? (asRecord(record.cssStyles) as Record<string, string>) : undefined,
     classes: record.classes ? asArray(record.classes).map((c) => asString(c)).filter(Boolean) : undefined,

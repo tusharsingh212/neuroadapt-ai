@@ -516,6 +516,10 @@ export const contentStyles = `
     font-size: 12px;
     line-height: 1.5;
     min-height: 44px;
+    pointer-events: auto;
+    user-select: text;
+    -webkit-user-select: text;
+    caret-color: #7dd3fc;
   }
 
   .na-chat-input:focus-visible {
