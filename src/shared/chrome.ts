@@ -21,7 +21,7 @@ export async function queryActiveTab(): Promise<chrome.tabs.Tab | null> {
   });
 }
 
-const MESSAGE_TIMEOUT_MS = 20000;
+const MESSAGE_TIMEOUT_MS = 65000;
 
 function timeoutPromise<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([

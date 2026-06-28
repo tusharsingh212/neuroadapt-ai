@@ -18,7 +18,7 @@ import type { AiAnalysisResult, TaskAssistantResult } from "@/shared/types";
 // To enable AI features during local development, paste a valid Gemini key here.
 const BACKEND_GEMINI_API_KEY: string =
   import.meta.env.VITE_GEMINI_API_KEY || "";
-const DEFAULT_MODEL = "gemini-1.5-flash";
+const DEFAULT_MODEL = "gemini-2.0-flash";
 
 const CACHE_MAX_SIZE = 50;
 const analysisCache = new Map<string, AiAnalysisResult>();
@@ -134,13 +134,31 @@ chrome.runtime.onMessage.addListener(
           }
 
           await throttleGemini();
-          const analysis = await analyzeWithGemini({
-            apiKey: BACKEND_GEMINI_API_KEY,
-            model: DEFAULT_MODEL,
-            summary: msg.payload.summary,
-            preferredPersona: msg.payload.preferredPersona,
-            question: msg.payload.question,
-          });
+          let analysis: AiAnalysisResult;
+          try {
+            analysis = await analyzeWithGemini({
+              apiKey: BACKEND_GEMINI_API_KEY,
+              model: DEFAULT_MODEL,
+              summary: msg.payload.summary,
+              preferredPersona: msg.payload.preferredPersona,
+              question: msg.payload.question,
+            });
+          } catch (primaryErr) {
+            // If the primary model isn't available, try the lite fallback
+            const isModelError =
+              primaryErr instanceof Error &&
+              (primaryErr.message.includes("404") ||
+               primaryErr.message.includes("not found") ||
+               primaryErr.message.toLowerCase().includes("model"));
+            if (!isModelError) throw primaryErr;
+            analysis = await analyzeWithGemini({
+              apiKey: BACKEND_GEMINI_API_KEY,
+              model: "gemini-1.5-flash-8b",
+              summary: msg.payload.summary,
+              preferredPersona: msg.payload.preferredPersona,
+              question: msg.payload.question,
+            });
+          }
 
           analysisCache.set(key, analysis);
           trimCache(analysisCache as Map<string, unknown>, CACHE_MAX_SIZE);

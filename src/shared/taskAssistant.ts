@@ -2,7 +2,6 @@ import { compactPageContext, getActiveContextElement, type PageContext } from "@
 import { parseTaskAssistantJson, validateTaskAssistantResult } from "@/shared/taskAssistantSchema";
 import type { AccessibilityDetail, ChatMessage, ChecklistItem, ConfusionSignal, GoalSession, PersonaId, TaskAssistantResult } from "@/shared/types";
 import { callGemini } from "@/shared/geminiClient";
-import { createAbortSignal } from "@/shared/requestManager";
 
 export interface TaskAssistantRequest {
   apiKey: string;
@@ -79,7 +78,7 @@ function formatHistory(messages: ChatMessage[]): string {
 }
 
 function userPrompt(request: TaskAssistantRequest): string {
-  const activeElement = getActiveContextElement();
+  const activeElement = typeof document !== "undefined" ? getActiveContextElement() : null;
   const lines = [
     `Current persona: ${request.context.persona}`,
     `User question: ${request.question}`,
@@ -195,7 +194,9 @@ export async function analyzeTaskWithGemini(
   try {
     const fullPrompt = `${systemPrompt(request.context.persona)}\n\n${userPrompt(request)}`;
     const text = await callGemini(request.apiKey, request.model, fullPrompt, {
-      signal: request.signal
+      signal: request.signal,
+      timeout: 22000,
+      retries: 0,
     });
 
     const parsed = parseTaskAssistantJson(text);
@@ -205,6 +206,7 @@ export async function analyzeTaskWithGemini(
       generatedAt: Date.now()
     };
   } catch (error) {
+    console.error("[NeuroAdapt] Gemini task assistant error:", error);
     if (allowFallback) {
       return heuristicFallback(request.context, request.question);
     }

@@ -83,6 +83,10 @@ function extractElement(element: Element): ExtractedElement {
   const htmlElement = element instanceof HTMLElement ? element : null;
   const rect = htmlElement?.getBoundingClientRect();
   const style = htmlElement ? window.getComputedStyle(htmlElement) : null;
+  const meaningfulClasses = Array.from(element.classList)
+    .filter((c) => c.length > 2 && !/^[a-z]{1,2}\d+$/.test(c))
+    .slice(0, 3)
+    .join(" ");
   return {
     label: labelFor(element),
     role: element.getAttribute("role") || element.tagName.toLowerCase(),
@@ -91,7 +95,9 @@ function extractElement(element: Element): ExtractedElement {
     type: element instanceof HTMLInputElement ? element.type : undefined,
     fontSize: style ? Math.round(Number.parseFloat(style.fontSize || "16") * 10) / 10 : undefined,
     contrastRatio: htmlElement ? contrastRatio(htmlElement) : undefined,
-    smallTarget: rect ? rect.width < 44 || rect.height < 44 : undefined
+    smallTarget: rect ? rect.width < 44 || rect.height < 44 : undefined,
+    id: element.id || undefined,
+    cssClass: meaningfulClasses || undefined
   };
 }
 

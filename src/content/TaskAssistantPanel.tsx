@@ -204,8 +204,23 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
       });
 
       if (!response?.ok || !response.result) {
-        if (!silent) onStatus?.(response?.error ?? "Assistant unavailable.");
-        return null;
+        // Background unavailable or timed out — build a local fallback response
+        if (!silent) onStatus?.(response?.error ?? "Using offline assistant.");
+        const title = context.summary.title || "this page";
+        const primaryBtn = context.summary.buttons.find((b) =>
+          /start|apply|continue|submit|next|register|sign|book|pay/i.test(b.label)
+        );
+        return {
+          reply: primaryBtn
+            ? `I'm working offline right now. On this page ("${title}"), "${primaryBtn.label}" looks like the main action. Would you like help with that?`
+            : `I'm working offline right now. I can see you're on "${title}". What would you like to do? Tell me and I'll guide you.`,
+          elementFound: !!primaryBtn,
+          highlightElementRef: undefined,
+          checklist: [],
+          formFields: [],
+          source: "heuristic" as const,
+          generatedAt: Date.now(),
+        };
       }
 
       const result = response.result;

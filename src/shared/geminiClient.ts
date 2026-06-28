@@ -1,8 +1,8 @@
 const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
 
-const REQUEST_TIMEOUT_MS = 15000;
-const MAX_RETRIES = 2;
-const RETRY_DELAY_MS = 1000;
+const REQUEST_TIMEOUT_MS = 55000;
+const MAX_RETRIES = 1;
+const RETRY_DELAY_MS = 2000;
 
 interface GeminiGenerateResponse {
   candidates?: Array<{
@@ -85,7 +85,6 @@ export async function callGemini(
               temperature,
               topP: 0.85,
               maxOutputTokens,
-              responseMimeType: "application/json"
             },
             contents: [
               {
