@@ -1,4 +1,4 @@
-import type { AiAnalysisResult, AiGuidanceItem, AiIssue, AiRecommendation, DomAction, PersonaId } from "@/shared/types";
+﻿import type { AiAnalysisResult, AiGuidanceItem, AiIssue, AiRecommendation, DomAction, PersonaId } from "@/shared/types";
 
 const DOM_ACTION_TYPES = ["move", "hide", "style", "addClass", "changeText"];
 const DOM_POSITIONS = ["before", "after", "inside-start", "inside-end"];
@@ -90,7 +90,6 @@ export function parseGeminiJson(text: string): unknown {
 function parseDomAction(value: unknown): DomAction | null {
   const record = asRecord(value);
   const action = asString(record.action);
-<<<<<<< HEAD
   if (!action || !DOM_ACTION_TYPES.includes(action)) return null;
   const elementRef = asString(record.elementRef);
   const cssSelector = asString(record.cssSelector) || undefined;
@@ -101,14 +100,6 @@ function parseDomAction(value: unknown): DomAction | null {
     cssSelector,
     targetRef: asString(record.targetRef) || undefined,
     targetSelector: asString(record.targetSelector) || undefined,
-=======
-  const elementRef = asString(record.elementRef);
-  if (!action || !elementRef || !DOM_ACTION_TYPES.includes(action)) return null;
-  return {
-    action: action as DomAction["action"],
-    elementRef,
-    targetRef: asString(record.targetRef) || undefined,
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
     position: DOM_POSITIONS.includes(record.position as string) ? (record.position as DomAction["position"]) : undefined,
     cssStyles: record.cssStyles ? (asRecord(record.cssStyles) as Record<string, string>) : undefined,
     classes: record.classes ? asArray(record.classes).map((c) => asString(c)).filter(Boolean) : undefined,

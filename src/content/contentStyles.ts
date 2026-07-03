@@ -1,4 +1,4 @@
-export const contentStyles = `
+﻿export const contentStyles = `
   :host {
     all: initial;
     font-family: Aptos, "Segoe UI Variable", "Segoe UI", Inter, system-ui, sans-serif;
@@ -516,13 +516,10 @@ export const contentStyles = `
     font-size: 12px;
     line-height: 1.5;
     min-height: 44px;
-<<<<<<< HEAD
     pointer-events: auto;
     user-select: text;
     -webkit-user-select: text;
     caret-color: #7dd3fc;
-=======
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
   }
 
   .na-chat-input:focus-visible {
@@ -1086,7 +1083,6 @@ export const contentStyles = `
       transform: none;
       max-height: 50vh;
     }
-<<<<<<< HEAD
   }
 
   /* ---- Goal Card (inline in panel) ---- */
@@ -1308,7 +1304,5 @@ export const contentStyles = `
 
   .na-confidence-high {
     color: rgba(52, 211, 153, 0.75);
-=======
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
   }
 `;

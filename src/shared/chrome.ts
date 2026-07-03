@@ -1,4 +1,4 @@
-export const hasChromeRuntime =
+﻿export const hasChromeRuntime =
   typeof chrome !== "undefined" && Boolean(chrome.runtime && chrome.storage);
 
 export function isExtensionPage(): boolean {
@@ -21,11 +21,7 @@ export async function queryActiveTab(): Promise<chrome.tabs.Tab | null> {
   });
 }
 
-<<<<<<< HEAD
 const MESSAGE_TIMEOUT_MS = 65000;
-=======
-const MESSAGE_TIMEOUT_MS = 20000;
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 
 function timeoutPromise<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([

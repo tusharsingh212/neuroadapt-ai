@@ -1,4 +1,4 @@
-import { callGemini } from "@/shared/geminiClient";
+﻿import { callGemini } from "@/shared/geminiClient";
 import { parseGeminiJson, validateAiAnalysis } from "@/shared/aiSchema";
 import type { AiAnalysisResult, PageSummary, PersonaId } from "@/shared/types";
 
@@ -37,7 +37,6 @@ function compactSummary(summary: PageSummary): string {
 }
 
 function systemPrompt(): string {
-<<<<<<< HEAD
   return `You are NeuroAdapt AI. A base accessibility stylesheet is already applied (large fonts, big buttons, white main area). Your job: page-specific fixes only. Return STRICT JSON, no markdown.
 
 Shape: {"persona":"elderly|firstTime|taskHelper","score":0,"issues":[],"recommendations":[],"guidance":[],"summary":"","customCss":"","domActions":[]}
@@ -57,27 +56,10 @@ recommendations (max 4): [{id:string,type:"font-scale|spacing|contrast|highlight
 guidance (max 2): [{title:string,body:string,steps:string[]}]
 
 score: 0-100 (lower = worse). persona: best fit. summary: 1 sentence on main problem.`;
-=======
-  return [
-    "You are NeuroAdapt AI, an accessibility copilot for webpages.",
-    "Analyze only the provided structured page summary. Do not ask for raw HTML.",
-    "Return strict JSON only. No markdown, no commentary.",
-    "The JSON shape must be:",
-    '{"persona":"elderly|firstTime|taskHelper","score":0,"issues":[],"recommendations":[],"guidance":[],"summary":"","customCss":"","domActions":[{"action":"move|hide|style|addClass|changeText","elementRef":"","targetRef":"","position":"before|after|inside-start|inside-end","cssStyles":{},"classes":[],"text":""}]}',
-    "issues items: {severity:'low|medium|high', category:string, description:string, evidence?:string}.",
-    "recommendations items: {id:string, type:'font-scale|spacing|contrast|highlight-buttons|simplify-layout|guidance-markers|focus-indicators', priority:'low|medium|high', description:string, selectorHint?:string}.",
-    "guidance items: {title:string, body:string, steps?:string[]}.",
-    "Score is an accessibility suitability score from 0 to 100 where higher is better.",
-    "customCss: raw CSS string to dynamically adapt the page.",
-    "domActions: reversible DOM manipulation actions to restructure the page for the persona.",
-    "Prefer actionable, reversible recommendations that can be applied by a Chrome extension."
-  ].join("\n");
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 }
 
 function userPrompt(request: GeminiAnalyzeRequest): string {
   return [
-<<<<<<< HEAD
     `Target persona: ${request.preferredPersona}`,
     request.question ? `User question: ${request.question}` : "",
     "",
@@ -86,16 +68,6 @@ function userPrompt(request: GeminiAnalyzeRequest): string {
     "Use the id and cssClass fields from the page data to build precise CSS selectors.",
     "",
     "Page data:",
-=======
-    `Preferred persona: ${request.preferredPersona}`,
-    request.question ? `User question: ${request.question}` : "User question: Explain and adapt this page.",
-    "Tasks:",
-    "1. Identify accessibility barriers, readability issues, navigation complexity, and cognitive load.",
-    "2. Detect the best persona fit between elderly, firstTime, or taskHelper.",
-    "3. Generate contextual guidance for using the current page.",
-    "4. Recommend reversible DOM adaptations.",
-    "Structured page summary:",
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
     compactSummary(request.summary)
   ].filter(Boolean).join("\n");
 }
@@ -108,11 +80,7 @@ export async function analyzeWithGemini(request: GeminiAnalyzeRequest): Promise<
   const fullPrompt = `${systemPrompt()}\n\n${userPrompt(request)}`;
   const text = await callGemini(request.apiKey, request.model, fullPrompt, {
     temperature: 0.2,
-<<<<<<< HEAD
     maxOutputTokens: 2000
-=======
-    maxOutputTokens: 1600
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
   });
 
   return {

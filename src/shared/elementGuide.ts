@@ -1,4 +1,4 @@
-import { findElementByRef } from "@/shared/pageContext";
+﻿import { findElementByRef } from "@/shared/pageContext";
 import type { ChecklistItem, FormFieldGuide, DomAction, HighlightCandidate } from "@/shared/types";
 import { highlightElement as engineHighlight, clearHighlight as engineClear, resolveVisualTarget } from "@/shared/highlightEngine";
 import { injectStylesSafely, injectStylesForNode, removeInjectedStyles } from "@/shared/cspSafeStyles";
@@ -66,10 +66,7 @@ function ensureGuideStylesForNode(node: Node): void {
 }
 
 export function clearGuidanceHighlights(doc: Document = document): void {
-<<<<<<< HEAD
   engineClear();
-=======
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
   for (const element of queryDeepAll<HTMLElement>("[data-neuroadapt-guided], [data-neuroadapt-field-guided]", doc)) {
     for (const attr of GUIDE_ATTRS) {
       element.removeAttribute(attr);
@@ -159,7 +156,6 @@ export function resetDomActions(doc: Document): void {
   });
 }
 
-<<<<<<< HEAD
 function resolveElement(doc: Document, ref: string, cssSelector?: string): HTMLElement | null {
   if (ref) {
     const byRef = findElementByRef(doc, ref);
@@ -175,8 +171,6 @@ function resolveElement(doc: Document, ref: string, cssSelector?: string): HTMLE
   return null;
 }
 
-=======
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 export function applyDomActions(doc: Document, actions: DomAction[], customCss?: string): void {
   resetDomActions(doc);
 
@@ -186,7 +180,6 @@ export function applyDomActions(doc: Document, actions: DomAction[], customCss?:
 
   for (const action of actions) {
     try {
-<<<<<<< HEAD
       const el = resolveElement(doc, action.elementRef, action.cssSelector);
       if (!el) continue;
 
@@ -214,36 +207,6 @@ export function applyDomActions(doc: Document, actions: DomAction[], customCss?:
           break;
         case "move": {
           const target = resolveElement(doc, action.targetRef ?? "", action.targetSelector);
-=======
-    const el = findElementByRef(doc, action.elementRef);
-    if (!el) continue;
-
-    switch (action.action) {
-      case "hide":
-        el.setAttribute("data-na-original-display", el.style.display || "null");
-        el.style.display = "none";
-        break;
-      case "style":
-        if (action.cssStyles) {
-          for (const [prop, val] of Object.entries(action.cssStyles)) {
-            el.style.setProperty(prop, val, "important");
-          }
-        }
-        break;
-      case "addClass":
-        if (action.classes) {
-          el.classList.add(...action.classes);
-        }
-        break;
-      case "changeText":
-        if (action.text) {
-          el.textContent = action.text;
-        }
-        break;
-      case "move":
-        if (action.targetRef) {
-          const target = findElementByRef(doc, action.targetRef);
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
           if (target && target.parentNode) {
             el.setAttribute("data-na-original-parent", "true");
             if (action.position === "before") target.parentNode.insertBefore(el, target);
@@ -251,15 +214,9 @@ export function applyDomActions(doc: Document, actions: DomAction[], customCss?:
             else if (action.position === "inside-start") target.prepend(el);
             else target.appendChild(el);
           }
-<<<<<<< HEAD
           break;
         }
       }
-=======
-        }
-        break;
-    }
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
     } catch {
       // A single malformed/AI-provided action must never abort the rest of the batch.
     }

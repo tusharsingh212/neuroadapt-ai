@@ -1,9 +1,5 @@
-import type { OverlayMode, OverlaySettings } from "@/shared/types";
-<<<<<<< HEAD
+﻿import type { OverlayMode, OverlaySettings } from "@/shared/types";
 import { removeSimplifiedHelpers, detectConfusingLabels, injectSimplifiedHelper, detectJargonInBody } from "@/shared/labelSimplifier";
-=======
-import { removeSimplifiedHelpers, detectConfusingLabels, injectSimplifiedHelper } from "@/shared/labelSimplifier";
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 import { injectStylesSafely, removeInjectedStyles } from "@/shared/cspSafeStyles";
 
 const STORAGE_KEY = "na-overlay-settings";
@@ -11,7 +7,6 @@ const OVERLAY_STYLE_ID = "na-overlay-styles";
 
 const OVERLAY_CSS: Record<OverlayMode, string> = {
   focusMode: `
-<<<<<<< HEAD
     html.na-overlay-focusMode body > *:not(#neuroadapt-host):not(#neuroadapt-action-bar) { opacity: 0.12 !important; pointer-events: none !important; transition: opacity 0.2s !important; }
     html.na-overlay-focusMode main, html.na-overlay-focusMode [role="main"], html.na-overlay-focusMode article, html.na-overlay-focusMode form { opacity: 1 !important; pointer-events: auto !important; }
     html.na-overlay-focusMode [data-neuroadapt-guided] { opacity: 1 !important; pointer-events: auto !important; }
@@ -134,43 +129,6 @@ const OVERLAY_CSS: Record<OverlayMode, string> = {
   `,
 
   simplifiedLabels: `/* handled by labelSimplifier.ts */`
-=======
-    html.na-overlay-focusMode body > :not(main, article, form, [role="main"]) { opacity: 0.15 !important; pointer-events: none !important; }
-    html.na-overlay-focusMode [data-neuroadapt-guided] { opacity: 1 !important; pointer-events: auto !important; }
-  `,
-  readingMode: `
-    html.na-overlay-readingMode body { max-width: 720px !important; margin: 0 auto !important; }
-    html.na-overlay-readingMode aside, html.na-overlay-readingMode nav, html.na-overlay-readingMode iframe,
-    html.na-overlay-readingMode .ad, html.na-overlay-readingMode [class*="ad-"], html.na-overlay-readingMode [id*="ad-"] { display: none !important; }
-  `,
-  reducedClutter: `
-    html.na-overlay-reducedClutter aside, html.na-overlay-reducedClutter [role="complementary"],
-    html.na-overlay-reducedClutter .sidebar, html.na-overlay-reducedClutter iframe,
-    html.na-overlay-reducedClutter [data-neuroadapt-secondary="true"] { display: none !important; }
-  `,
-  largeTargets: `
-    html.na-overlay-largeTargets button, html.na-overlay-largeTargets a[href],
-    html.na-overlay-largeTargets input, html.na-overlay-largeTargets select,
-    html.na-overlay-largeTargets textarea, html.na-overlay-largeTargets [role="button"] {
-      min-height: 56px !important; min-width: 56px !important; padding: 14px 18px !important; font-size: 1.05rem !important;
-    }
-  `,
-  highContrast: `
-    html.na-overlay-highContrast, html.na-overlay-highContrast body {
-      background: #000 !important; color: #fff !important;
-    }
-    html.na-overlay-highContrast a { color: #60a5fa !important; }
-    html.na-overlay-highContrast button, html.na-overlay-highContrast input, html.na-overlay-highContrast select { background: #111 !important; color: #fff !important; border-color: #444 !important; }
-    html.na-overlay-highContrast img, html.na-overlay-highContrast video { filter: grayscale(100%) contrast(1.3) !important; }
-  `,
-  dyslexiaSpacing: `
-    html.na-overlay-dyslexiaSpacing body {
-      line-height: 1.8 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important;
-    }
-    html.na-overlay-dyslexiaSpacing p, html.na-overlay-dyslexiaSpacing li, html.na-overlay-dyslexiaSpacing label { font-size: 1.15rem !important; }
-  `,
-  simplifiedLabels: `/* handled by labelSimplifier.ts injection */`
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 };
 
 /** Origin/hostname namespace for a document, so overlay settings never leak across sites. */
@@ -239,10 +197,7 @@ function updateBodyClasses(doc: Document, settings: OverlaySettings): void {
   if (settings.simplifiedLabels) {
     const labels = detectConfusingLabels(doc);
     labels.forEach((l) => injectSimplifiedHelper(doc, l));
-<<<<<<< HEAD
     detectJargonInBody(doc);
-=======
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
   } else {
     removeSimplifiedHelpers(doc);
   }

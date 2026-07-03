@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+﻿import { motion } from "framer-motion";
 import {
   Bot,
   ChevronDown,
@@ -12,12 +12,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { applyAdaptation, resetAdaptation } from "@/shared/adaptation";
 import { sendRuntimeMessage } from "@/shared/chrome";
-<<<<<<< HEAD
 import { applyDomActions, resetDomActions, clearGuidanceHighlights } from "@/shared/elementGuide";
 import { simplifyPage } from "@/shared/simplifyPage";
-=======
-import { applyDomActions, resetDomActions } from "@/shared/elementGuide";
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 import { HeuristicObserver, type HeuristicSignal } from "@/shared/heuristics";
 import { buildAnalysisReport, inspectPage } from "@/shared/pageInsights";
 import { extractPageSummary } from "@/shared/pageSummary";
@@ -74,11 +70,6 @@ export function ContentApp(): JSX.Element {
   const [collapsed, setCollapsed] = useState(false);
   // visible: user has intentionally opened the panel OR extension is enabled from popup
   const [visible, setVisible] = useState(false);
-<<<<<<< HEAD
-=======
-  // panelDomVisible: controls DOM visibility; delayed on close so exit animation can finish
-  const [panelDomVisible, setPanelDomVisible] = useState(false);
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 
   const [comparison, setComparison] = useState<"original" | "adapted">(DEFAULT_SETTINGS.comparisonMode);
   const [busy, setBusy] = useState<"analyze" | "adapt" | "reset" | null>(null);
@@ -97,15 +88,6 @@ export function ContentApp(): JSX.Element {
   const showAssistant = visible || settings.enabled;
   const panelOpen = showAssistant && !collapsed;
   const bubbleVisible = !panelOpen;
-<<<<<<< HEAD
-=======
-
-  // Bring the panel into DOM as soon as it should open;
-  // keep it in DOM after close until exit animation finishes (onAnimationComplete removes it)
-  useEffect(() => {
-    if (panelOpen) setPanelDomVisible(true);
-  }, [panelOpen]);
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 
   useEffect(() => {
     settingsRef.current = settings;
@@ -216,13 +198,10 @@ export function ContentApp(): JSX.Element {
             persona: message.payload?.persona ?? settingsRef.current.persona,
             comparisonMode: "adapted"
           };
-<<<<<<< HEAD
           // 1. Instant visual transformation — happens before Gemini
           simplifyCleanupRef.current?.();
           simplifyCleanupRef.current = simplifyPage(document, nextSettings.persona);
           // 2. Gemini analysis runs in background; page already looks different
-=======
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
           const nextInsights = inspectPage(document);
           const nextAnalysis = await runGeminiAnalysis(nextSettings);
           const nextFeed = feedLines(nextAnalysis, nextInsights);
@@ -232,10 +211,6 @@ export function ContentApp(): JSX.Element {
           setAnalysis(nextAnalysis); setMessages(nextFeed); setRuntime(nextRuntime);
           setVisible(true);
           saveSettings(nextSettings).catch(() => undefined);
-<<<<<<< HEAD
-=======
-          applyAdaptation(document, nextSettings, nextInsights);
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
           sendResponse({ settings: nextSettings, insights: nextInsights, analysis: nextAnalysis, runtime: nextRuntime } satisfies NeuroAdaptStateMessage);
         })();
         return true;
@@ -252,11 +227,8 @@ export function ContentApp(): JSX.Element {
         setVisible(false);
         saveSettings(nextSettings).catch(() => undefined);
         resetAdaptation(document); resetDomActions(document);
-<<<<<<< HEAD
         simplifyCleanupRef.current?.();
         simplifyCleanupRef.current = null;
-=======
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
         sendResponse({ settings: nextSettings, insights: nextInsights, analysis: nextAnalysis, runtime: nextRuntime } satisfies NeuroAdaptStateMessage);
         return false;
       }
@@ -304,14 +276,9 @@ export function ContentApp(): JSX.Element {
       setMessages((current) => [msg, ...current].slice(0, 5));
       return heuristicReport;
     }
-<<<<<<< HEAD
     // Persona CSS is already injected by simplifyPage; only apply Gemini's page-specific output
     if (response.analysis.customCss || (response.analysis.domActions?.length ?? 0) > 0) {
       applyDomActions(document, response.analysis.domActions ?? [], response.analysis.customCss || undefined);
-=======
-    if (response.analysis.customCss || response.analysis.domActions?.length) {
-      applyDomActions(document, response.analysis.domActions ?? [], response.analysis.customCss);
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
     }
     return buildAnalysisReport(nextSettings, nextInsights, response.analysis);
   }
@@ -320,23 +287,16 @@ export function ContentApp(): JSX.Element {
     setBusy("adapt");
     const nextSettings: ExtensionSettings = { ...settingsRef.current, enabled: true, comparisonMode: "adapted" };
     await persistSettings(nextSettings);
-<<<<<<< HEAD
     // 1. Instant visual transformation
     simplifyCleanupRef.current?.();
     simplifyCleanupRef.current = simplifyPage(document, nextSettings.persona);
     // 2. Gemini page-specific enhancements (after user already sees the change)
-=======
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
     const nextInsights = inspectPage(document);
     const nextAnalysis = await runGeminiAnalysis(nextSettings);
     const nextFeed = feedLines(nextAnalysis, nextInsights);
     setInsights(nextInsights); setAnalysis(nextAnalysis); setMessages(nextFeed);
     setRuntime({ state: "done", messages: nextFeed, lastUpdated: Date.now() });
     setVisible(true);
-<<<<<<< HEAD
-=======
-    applyAdaptation(document, nextSettings, nextInsights);
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
     setBusy(null);
   }
 
@@ -350,13 +310,9 @@ export function ContentApp(): JSX.Element {
     setMessages(["Original interface restored."]);
     setRuntime({ state: "idle", messages: ["Original interface restored."], lastUpdated: Date.now() });
     setVisible(false);
-<<<<<<< HEAD
     resetAdaptation(document); resetDomActions(document); clearGuidanceHighlights(document);
     simplifyCleanupRef.current?.();
     simplifyCleanupRef.current = null;
-=======
-    resetAdaptation(document); resetDomActions(document);
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
     setBusy(null);
   }
 
@@ -417,12 +373,7 @@ export function ContentApp(): JSX.Element {
           Visibility + pointer-events toggle it on/off; framer-motion
           animates the opacity/position so enter/exit feel polished.
       ───────────────────────────────────────────────────────────────── */}
-<<<<<<< HEAD
       <motion.div
-=======
-      {panelDomVisible ? (
-        <motion.div
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
           className="na-shell"
           initial={false}
           animate={panelOpen
@@ -430,13 +381,6 @@ export function ContentApp(): JSX.Element {
             : { opacity: 0, y: 24, scale: 0.98 }
           }
           transition={{ duration: 0.24 }}
-<<<<<<< HEAD
-=======
-          onAnimationComplete={() => {
-            // Remove from DOM only after the exit animation finishes
-            if (!panelOpen) setPanelDomVisible(false);
-          }}
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
           style={{
             visibility: panelOpen ? "visible" : "hidden",
             pointerEvents: panelOpen ? "auto" : "none",
@@ -525,10 +469,6 @@ export function ContentApp(): JSX.Element {
             </div>
           </div>
         </motion.div>
-<<<<<<< HEAD
-=======
-      ) : null}
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 
       {/* ── Bubble + hint card ─────────────────────────────────────── */}
       {bubbleVisible ? (
@@ -583,19 +523,12 @@ export function ContentApp(): JSX.Element {
         </motion.div>
       ) : null}
 
-<<<<<<< HEAD
       {/* Task sidebar — shown only when the main panel is collapsed so goal info isn't duplicated */}
       {!panelOpen ? (
         <TaskSidebar onRequestReanalysis={() => {
           if (settings.enabled) applyAdaptation(document, settings, inspectPage(document));
         }} />
       ) : null}
-=======
-      {/* Task sidebar — fixed left panel during active sessions */}
-      <TaskSidebar onRequestReanalysis={() => {
-        if (settings.enabled) applyAdaptation(document, settings, inspectPage(document));
-      }} />
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
     </div>
   );
 }

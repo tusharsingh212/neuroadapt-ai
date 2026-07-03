@@ -1,9 +1,6 @@
-import { AnimatePresence, motion } from "framer-motion";
+﻿import { AnimatePresence, motion } from "framer-motion";
 import {
-<<<<<<< HEAD
   AlertTriangle,
-=======
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
   ChevronDown,
   ChevronUp,
   ExternalLink,
@@ -20,10 +17,7 @@ import { asErrorMessage, injectContentScriptIfNeeded, queryActiveTab, sendToActi
 import {
   DEFAULT_SETTINGS,
   PERSONA_OPTIONS,
-<<<<<<< HEAD
   type AiIssue,
-=======
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
   type ExtensionSettings
 } from "@/shared/types";
 import { loadSettings, saveSettings } from "@/shared/storage";
@@ -32,7 +26,6 @@ import { Pill, SectionTitle, SoftCard } from "@/shared/ui";
 import type { NeuroAdaptStateMessage } from "@/shared/messaging";
 
 type BusyAction = "adapt" | "reset" | null;
-<<<<<<< HEAD
 
 function severityColor(severity: AiIssue["severity"]): string {
   if (severity === "high") return "text-rose-700 bg-rose-50 border-rose-200";
@@ -45,8 +38,6 @@ function severityDot(severity: AiIssue["severity"]): string {
   if (severity === "medium") return "bg-amber-400";
   return "bg-slate-400";
 }
-=======
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 
 function statusToneClass(kind: "info" | "success" | "warning" | "error"): string {
   switch (kind) {
@@ -68,11 +59,8 @@ export function PopupApp(): JSX.Element {
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-<<<<<<< HEAD
   const [foundIssues, setFoundIssues] = useState<AiIssue[]>([]);
   const [issuesOpen, setIssuesOpen] = useState(true);
-=======
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 
   useEffect(() => {
     let mounted = true;
@@ -107,19 +95,14 @@ export function PopupApp(): JSX.Element {
 
   async function helpWithPage(): Promise<void> {
     setBusyAction("adapt");
-<<<<<<< HEAD
     setFoundIssues([]);
     showStatus("Analyzing page with AI...", "info", false);
-=======
-    showStatus("Setting things up...", "info", false);
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
     const next = { ...settings, enabled: true, comparisonMode: "adapted" as const };
     setSettings(next);
     try {
       const activeTab = await queryActiveTab();
       if (!activeTab?.id) throw new Error("No active tab available.");
       await injectContentScriptIfNeeded(activeTab.id);
-<<<<<<< HEAD
       const response = await sendToActiveTab<NeuroAdaptStateMessage>({ type: "NA_ADAPT_PAGE", payload: { persona: next.persona } });
       const issues = response?.analysis?.ai?.issues ?? [];
       setFoundIssues(issues);
@@ -131,11 +114,6 @@ export function PopupApp(): JSX.Element {
           : "Done! Look for the chat icon in the bottom-right corner of the page.",
         "success"
       );
-=======
-      await sendToActiveTab<NeuroAdaptStateMessage>({ type: "NA_ADAPT_PAGE", payload: { persona: next.persona } });
-      await saveSettings(next);
-      showStatus("Done! Look for the chat icon in the bottom-right corner of the page.", "success");
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
     } catch (error) {
       showStatus(`Could not connect: ${asErrorMessage(error)}`, "error");
     } finally {
@@ -144,10 +122,7 @@ export function PopupApp(): JSX.Element {
   }
 
   async function undoChanges(): Promise<void> {
-<<<<<<< HEAD
     setFoundIssues([]);
-=======
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
     setBusyAction("reset");
     showStatus("Restoring original page...", "info", false);
     const next = { ...settings, enabled: false, comparisonMode: "original" as const };
@@ -328,7 +303,6 @@ export function PopupApp(): JSX.Element {
           </SoftCard>
         </motion.div>
 
-<<<<<<< HEAD
         {/* Issues panel */}
         <AnimatePresence>
           {foundIssues.length > 0 && (
@@ -388,8 +362,6 @@ export function PopupApp(): JSX.Element {
           )}
         </AnimatePresence>
 
-=======
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
       </div>
     </main>
   );

@@ -1,4 +1,4 @@
-import { PERSONA_GUIDANCE, type ExtensionSettings, type PageInsights, type PersonaId } from "@/shared/types";
+﻿import { PERSONA_GUIDANCE, type ExtensionSettings, type PageInsights, type PersonaId } from "@/shared/types";
 import { resetDomActions } from "@/shared/elementGuide";
 import { injectStylesSafely } from "@/shared/cspSafeStyles";
 import { queryDeepAll } from "@/shared/shadowDom";
@@ -205,15 +205,6 @@ const GLOBAL_ADAPTATION_CSS = `
       white-space: normal !important;
     }
 
-<<<<<<< HEAD
-=======
-    html.na-mode-firstTime [data-neuroadapt-field-guide='true'] {
-      border-color: rgba(16, 185, 129, 0.65) !important;
-      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.16) !important;
-      background-image: linear-gradient(90deg, rgba(236, 253, 245, 0.7), transparent) !important;
-    }
-
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
     html.na-preview-original body {
       filter: none !important;
       font-size: 1em !important;
@@ -297,14 +288,7 @@ function markInteractiveTargets(doc: Document, persona: PersonaId, insights: Pag
         "font-size": "1.05rem",
         "line-height": "1.5",
         "border-radius": "18px",
-<<<<<<< HEAD
         "font-weight": "700"
-=======
-        "font-weight": "700",
-        outline: "2px solid rgba(125, 211, 252, 0.45)",
-        "outline-offset": "2px",
-        "box-shadow": "0 10px 22px rgba(15, 23, 42, 0.08)"
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
       });
     }
 
@@ -319,14 +303,7 @@ function markInteractiveTargets(doc: Document, persona: PersonaId, insights: Pag
         "font-weight": "700",
         "min-height": "48px",
         padding: "0.85rem 1rem",
-<<<<<<< HEAD
         "border-radius": "16px"
-=======
-        "border-radius": "16px",
-        outline: "3px solid rgba(16, 185, 129, 0.5)",
-        "outline-offset": "3px",
-        "box-shadow": "0 16px 32px rgba(16, 185, 129, 0.16)"
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
       });
     }
 

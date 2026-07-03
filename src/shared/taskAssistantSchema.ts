@@ -1,4 +1,4 @@
-import type { ChecklistItem, FormFieldGuide, TaskAssistantResult, DomAction, HighlightCandidate } from "@/shared/types";
+﻿import type { ChecklistItem, FormFieldGuide, TaskAssistantResult, DomAction, HighlightCandidate } from "@/shared/types";
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -99,15 +99,11 @@ export function validateTaskAssistantResult(value: unknown): Omit<TaskAssistantR
     domActions: asArray(record.domActions).map(domAction).filter((item): item is DomAction => Boolean(item)),
     candidates: asArray(record.candidates).map(candidateItem).filter((item): item is HighlightCandidate => Boolean(item)).slice(0, 5),
     estimatedTime: asString(record.estimatedTime) || undefined,
-<<<<<<< HEAD
     estimatedSteps: typeof record.estimatedSteps === "number" ? record.estimatedSteps : undefined,
     reason: asString(record.reason).slice(0, 140) || undefined,
     confidence: (record.confidence === "high" || record.confidence === "medium" || record.confidence === "low")
       ? record.confidence
       : undefined,
     isOfficialSource: record.isOfficialSource === true ? true : undefined
-=======
-    estimatedSteps: typeof record.estimatedSteps === "number" ? record.estimatedSteps : undefined
->>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
   };
 }
