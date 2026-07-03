@@ -161,6 +161,7 @@ export function isOnSamePage(): boolean {
   const session = loadRaw();
   return session?.pageUrl === window.location.href;
 }
+<<<<<<< HEAD
 
 export function updateSessionUrl(url: string): void {
   const session = loadRaw();
@@ -169,3 +170,5 @@ export function updateSessionUrl(url: string): void {
   session.lastUpdatedAt = Date.now();
   saveRaw(session);
 }
+=======
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191

@@ -1,8 +1,15 @@
 import { compactPageContext, getActiveContextElement, type PageContext } from "@/shared/pageContext";
+<<<<<<< HEAD
 import { checkOfficialUrl } from "@/shared/pageClassifier";
 import { parseTaskAssistantJson, validateTaskAssistantResult } from "@/shared/taskAssistantSchema";
 import type { AccessibilityDetail, ChatMessage, ChecklistItem, ConfusionSignal, GoalSession, PersonaId, TaskAssistantResult } from "@/shared/types";
 import { callGemini } from "@/shared/geminiClient";
+=======
+import { parseTaskAssistantJson, validateTaskAssistantResult } from "@/shared/taskAssistantSchema";
+import type { AccessibilityDetail, ChatMessage, ChecklistItem, ConfusionSignal, GoalSession, PersonaId, TaskAssistantResult } from "@/shared/types";
+import { callGemini } from "@/shared/geminiClient";
+import { createAbortSignal } from "@/shared/requestManager";
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 
 export interface TaskAssistantRequest {
   apiKey: string;
@@ -26,10 +33,14 @@ const SAFETY_RULES = [
   "Be concise: reply in 2-3 sentences max.",
   "Stay grounded: only reference elements present in the page context.",
   "Never hallucinate: if you are unsure, say 'I'm not sure' and suggest alternatives.",
+<<<<<<< HEAD
   "Admit uncertainty: if the page doesn't have the needed feature, say so clearly.",
   "If confidence is 'low', set highlightElementRef to null and explain uncertainty in the reply instead of guessing.",
   "Always populate 'reason' with one sentence (under 20 words) explaining why this specific element is recommended.",
   "Set isOfficialSource to true only when highlightElementRef points to a verified government or institutional website."
+=======
+  "Admit uncertainty: if the page doesn't have the needed feature, say so clearly."
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 ];
 
 function systemPrompt(persona: PersonaId): string {
@@ -59,6 +70,7 @@ function systemPrompt(persona: PersonaId): string {
     ...SAFETY_RULES,
     ...personaExtras,
     "Return strict JSON only. No markdown.",
+<<<<<<< HEAD
     '{"reply":"","highlightElementRef":"na-el-0 or null","highlightTooltip":"","taskLabel":"","elementFound":true,"checklist":[{"id":"","label":"","status":"pending|active|completed"}],"formFields":[{"elementRef":"","label":"","explanation":"","required":true,"expectedFormat":""}],"candidates":[{"ref":"","label":"","reason":""}],"estimatedTime":"","estimatedSteps":5,"customCss":"","domActions":[],"safetyNote":"","reason":"","confidence":"high","isOfficialSource":false}',
     "reply: clear conversational answer grounded in the current page. Keep to 2-3 sentences.",
     "highlightElementRef: ref of the ONE element the user should click or fill next. Omit/null if informational or low confidence.",
@@ -66,6 +78,12 @@ function systemPrompt(persona: PersonaId): string {
     "reason: one sentence under 20 words explaining why this specific element is recommended. Required when highlightElementRef is set.",
     "confidence: 'high' if you are certain of the recommendation, 'medium' if plausible, 'low' if guessing. Low = no highlight.",
     "isOfficialSource: true only if highlightElementRef is a verified government or institutional website (.gov, .gov.in, .nhs.uk, etc.).",
+=======
+    '{"reply":"","highlightElementRef":"na-el-0 or null","highlightTooltip":"","taskLabel":"","elementFound":true,"checklist":[{"id":"","label":"","status":"pending|active|completed"}],"formFields":[{"elementRef":"","label":"","explanation":"","required":true,"expectedFormat":""}],"candidates":[{"ref":"","label":"","reason":""}],"estimatedTime":"","estimatedSteps":5,"customCss":"","domActions":[],"safetyNote":""}',
+    "reply: clear conversational answer grounded in the current page. Keep to 2-3 sentences.",
+    "highlightElementRef: ref of the ONE element the user should click or fill next. Omit/null if informational.",
+    "highlightTooltip: 3-5 word instruction like 'Click here to continue.'",
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
     "taskLabel: a short name for the current user goal like 'Aadhaar enrollment'.",
     "elementFound: true if the required element exists on this page, false otherwise.",
     "checklist: ordered task steps with one step set to 'active' at a time.",
@@ -85,7 +103,11 @@ function formatHistory(messages: ChatMessage[]): string {
 }
 
 function userPrompt(request: TaskAssistantRequest): string {
+<<<<<<< HEAD
   const activeElement = typeof document !== "undefined" ? getActiveContextElement() : null;
+=======
+  const activeElement = getActiveContextElement();
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
   const lines = [
     `Current persona: ${request.context.persona}`,
     `User question: ${request.question}`,
@@ -137,8 +159,12 @@ function userPrompt(request: TaskAssistantRequest): string {
   return lines.join("\n");
 }
 
+<<<<<<< HEAD
 function heuristicFallback(context: PageContext, question: string, goalSession?: import("@/shared/types").GoalSession | null): TaskAssistantResult {
   const q = question.toLowerCase();
+=======
+function heuristicFallback(context: PageContext, question: string): TaskAssistantResult {
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
   const buttons = context.summary.buttons.filter((b) => b.label);
   const primaryButton = buttons.find((b) => /start|apply|register|continue|submit|book|next|enroll|aadhaar/i.test(b.label));
   const firstRelevant = context.elements.find((el) =>
@@ -146,7 +172,11 @@ function heuristicFallback(context: PageContext, question: string, goalSession?:
   ) ?? context.elements[0];
 
   const checklist: ChecklistItem[] = [];
+<<<<<<< HEAD
   if (/apply|aadhaar|register|enrol/i.test(q)) {
+=======
+  if (/apply|aadhaar|register|enrol/i.test(question)) {
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
     checklist.push(
       { id: "1", label: "Find the registration or apply section", status: "active" },
       { id: "2", label: "Fill in your personal information", status: "pending" },
@@ -156,6 +186,7 @@ function heuristicFallback(context: PageContext, question: string, goalSession?:
     );
   }
 
+<<<<<<< HEAD
   const informational = /what is|what does|explain|mean|help me understand|what.s this|what is this/i.test(q);
   const asksAboutForm = /\bform\b/i.test(q);
   const asksWhatToClick = /what (should|do|can) i click|what.s next|what to click|where (should|do) i click|click next/i.test(q);
@@ -295,6 +326,35 @@ function heuristicFallback(context: PageContext, question: string, goalSession?:
     reason,
     confidence,
     isOfficialSource: isOfficialSource || undefined
+=======
+  const informational = /what is|what does|explain|mean|help me understand/i.test(question);
+  const asksAboutForm = /\bform\b/i.test(question);
+  const firstForm = context.summary.forms[0];
+
+  return {
+    reply: informational && asksAboutForm && firstForm?.fields.length
+      ? `This form ("${firstForm.label || "the form on this page"}") asks for: ${firstForm.fields.map((f) => f.label || "an unlabeled field").join(", ")}. Fill these in, then look for a submit button to continue.`
+      : informational
+      ? `This page is "${context.summary.title}". ${context.summary.description || context.summary.textBlocks[0]?.text || "Tell me what you'd like to do and I'll guide you step by step."}`
+      : primaryButton
+        ? `I can see "${primaryButton.label}" on this page — that's likely your next step.`
+        : `You're viewing "${context.summary.title}". What would you like to accomplish?`,
+    highlightElementRef: firstRelevant?.ref,
+    highlightTooltip: primaryButton ? `Click "${primaryButton.label}" to continue.` : undefined,
+    elementFound: !!firstRelevant,
+    checklist,
+    formFields: context.summary.forms[0]?.fields.slice(0, 6).map((field, i) => ({
+      elementRef: context.elements[i]?.ref ?? "",
+      label: field.label || `Field ${i + 1}`,
+      explanation: `Enter your ${(field.label || "information").toLowerCase()} here.`,
+      required: true,
+      expectedFormat: field.type === "email" ? "example@email.com" : undefined
+    })) ?? [],
+    source: "heuristic",
+    generatedAt: Date.now(),
+    estimatedSteps: checklist.length || undefined,
+    estimatedTime: "10-15 minutes"
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
   };
 }
 
@@ -306,7 +366,11 @@ export async function analyzeTaskWithGemini(
 
   if (!request.apiKey.trim()) {
     if (allowFallback) {
+<<<<<<< HEAD
       return heuristicFallback(request.context, request.question, request.goalSession);
+=======
+      return heuristicFallback(request.context, request.question);
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
     }
     throw new Error("AI assistant unavailable. Backend API not yet configured.");
   }
@@ -314,9 +378,13 @@ export async function analyzeTaskWithGemini(
   try {
     const fullPrompt = `${systemPrompt(request.context.persona)}\n\n${userPrompt(request)}`;
     const text = await callGemini(request.apiKey, request.model, fullPrompt, {
+<<<<<<< HEAD
       signal: request.signal,
       timeout: 22000,
       retries: 0,
+=======
+      signal: request.signal
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
     });
 
     const parsed = parseTaskAssistantJson(text);
@@ -326,9 +394,14 @@ export async function analyzeTaskWithGemini(
       generatedAt: Date.now()
     };
   } catch (error) {
+<<<<<<< HEAD
     console.error("[NeuroAdapt] Gemini task assistant error:", error);
     if (allowFallback) {
       return heuristicFallback(request.context, request.question, request.goalSession);
+=======
+    if (allowFallback) {
+      return heuristicFallback(request.context, request.question);
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
     }
     throw error instanceof Error ? error : new Error("Task assistant failed.");
   }

@@ -12,6 +12,7 @@ import {
   initGoalSession,
   startSession,
   getSession,
+<<<<<<< HEAD
   subscribe as subscribeToSession,
   updateChecklist,
   advanceChecklist,
@@ -22,6 +23,15 @@ import {
   updateSessionUrl
 } from "@/shared/goalSession";
 import { classifyPage, type PageClassification } from "@/shared/pageClassifier";
+=======
+  updateChecklist,
+  advanceChecklist,
+  isActive,
+  isOnSamePage,
+  completeSession,
+  pauseSession
+} from "@/shared/goalSession";
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 import { PageObserver } from "@/shared/pageObserver";
 import type { TaskAssistantMessage } from "@/shared/messaging";
 import type { ChatMessage, ChecklistItem, ConfusionSignal, ExtensionSettings, PersonaId, TaskAssistantResult } from "@/shared/types";
@@ -45,6 +55,15 @@ const FIRST_TIME_SUGGESTIONS = [
   "What is this page for?"
 ];
 
+<<<<<<< HEAD
+=======
+function buildWelcomeMessage(isFirstTimeMode: boolean): string {
+  if (isFirstTimeMode) {
+    return "Hello! I'm here to help. Tell me what you'd like to do — for example, \"Help me apply\" or \"What is this page for?\"";
+  }
+  return "Hello! I'm here to help. What would you like to do on this page? You can ask me anything.";
+}
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 
 function createId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -85,6 +104,7 @@ function ChecklistView({ items }: { items: ChecklistItem[] }): JSX.Element | nul
   );
 }
 
+<<<<<<< HEAD
 function GoalCard({ session, onCancel }: { session: import("@/shared/types").GoalSession; onCancel: () => void }): JSX.Element {
   const completed = session.checklist.filter((i) => i.status === "completed").length;
   const total = session.checklist.length;
@@ -128,6 +148,8 @@ function GoalCard({ session, onCancel }: { session: import("@/shared/types").Goa
   );
 }
 
+=======
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 const PRIMARY_ACTION_KEYWORDS = [
   "continue", "next", "submit", "apply", "register", "sign up", "create",
   "book", "schedule", "confirm", "save", "send", "pay", "checkout",
@@ -152,6 +174,7 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
   const resolvedPersona = settings.persona;
   const isFirstTimeMode = resolvedPersona === "firstTime";
 
+<<<<<<< HEAD
   const classificationRef = useRef<PageClassification | null>(null);
   const [showProactive, setShowProactive] = useState(true);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => {
@@ -160,10 +183,19 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
     classificationRef.current = cls;
     return [{ id: "welcome", role: "assistant" as const, content: cls.welcomeMessage, timestamp: Date.now() }];
   });
+=======
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([{
+    id: "welcome",
+    role: "assistant",
+    content: buildWelcomeMessage(isFirstTimeMode),
+    timestamp: Date.now()
+  }]);
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [walkthroughMode, setWalkthroughMode] = useState(false);
+<<<<<<< HEAD
   const [sessionSnapshot, setSessionSnapshot] = useState<import("@/shared/types").GoalSession | null>(() => getSession());
   const goalActive = sessionSnapshot !== null && (
     sessionSnapshot.status === "active" ||
@@ -171,6 +203,9 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
     sessionSnapshot.status === "paused"
   );
   const showGoalCard = sessionSnapshot !== null && sessionSnapshot.status !== "cancelled";
+=======
+  const [goalActive, setGoalActive] = useState(isActive());
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -184,7 +219,10 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
   // hasScanRef persists across panel open/close since the component stays mounted
   const hasScanRef = useRef(false);
   const onPageSummaryRef = useRef(onPageSummary);
+<<<<<<< HEAD
   const lastRecommendedRef = useRef<string | null>(null);
+=======
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 
   useEffect(() => { checklistRef.current = checklist; }, [checklist]);
   useEffect(() => { chatMessagesRef.current = chatMessages; }, [chatMessages]);
@@ -193,6 +231,7 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
   useEffect(() => { onPageSummaryRef.current = onPageSummary; }, [onPageSummary]);
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages, loading]);
 
+<<<<<<< HEAD
   // Keep sessionSnapshot in sync with sessionStorage
   useEffect(() => subscribeToSession((s) => {
     setSessionSnapshot(s);
@@ -215,6 +254,8 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+=======
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
   // Page observer for continuous re-analysis when goal is active
   useEffect(() => {
     if (!goalActive && !walkthroughMode) return;
@@ -227,6 +268,7 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
 
       if (event.type === "navigation") {
         clearGuidanceHighlights(document);
+<<<<<<< HEAD
         // Update the stored URL so future isOnSamePage() calls are correct
         updateSessionUrl(window.location.href);
         // Re-analyze the new page and continue the goal automatically
@@ -246,13 +288,29 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
       }
 
       if (event.type !== "click" && event.type !== "dom" && event.type !== "formChange") return;
+=======
+        const session = getSession();
+        if (session && !isOnSamePage()) {
+          pauseSession();
+          setGoalActive(false);
+          onGoalChange?.();
+        }
+        return;
+      }
+
+      if (event.type !== "click" && event.type !== "dom") return;
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 
       if (event.type === "click" && event.target) {
         if (!isPrimaryActionClick(event.target)) return;
       }
 
       advanceChecklist();
+<<<<<<< HEAD
       const question = "The page has changed. Determine if my previous step is complete and tell me the single next action.";
+=======
+      const question = "The page changed. Determine if the previous step was completed and tell me the next single step.";
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
       setLoading(true);
       runAssistantRef.current?.(question, chatMessagesRef.current, true).then((result) => {
         if (result) handleResponseRef.current?.(result, true);
@@ -284,6 +342,7 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
       });
 
       if (!response?.ok || !response.result) {
+<<<<<<< HEAD
         // Background unavailable or timed out — build a local fallback response
         if (!silent) onStatus?.(response?.error ?? "Using offline assistant.");
         const title = context.summary.title || "this page";
@@ -301,6 +360,10 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
           source: "heuristic" as const,
           generatedAt: Date.now(),
         };
+=======
+        if (!silent) onStatus?.(response?.error ?? "Assistant unavailable.");
+        return null;
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
       }
 
       const result = response.result;
@@ -314,6 +377,7 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
   );
 
   const handleResponse = useCallback((result: TaskAssistantResult, silent = false) => {
+<<<<<<< HEAD
     // Low confidence: never highlight, surface uncertainty message instead
     const isLowConfidence = result.confidence === "low";
     // Repetition guard: skip highlight if same element was already recommended
@@ -335,6 +399,17 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
       // No highlight requested — still apply form/dom actions if present
       applyGuidanceFromResponse(document, undefined, undefined, result.formFields, result.customCss, result.domActions);
     }
+=======
+    applyGuidanceFromResponse(
+      document,
+      result.highlightElementRef,
+      result.highlightTooltip,
+      result.formFields,
+      result.customCss,
+      result.domActions,
+      result.candidates
+    );
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 
     if (result.checklist.length > 0) {
       setChecklist((prev) => mergeChecklistProgress(prev, result.checklist));
@@ -346,13 +421,18 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
         ? result.checklist.map((c) => c.label)
         : ["Find the right section", "Fill in the form", "Review and submit"];
       initGoalSession(result.taskLabel, steps, result.estimatedTime, result.estimatedSteps);
+<<<<<<< HEAD
       startSession(); // immediately activate — no "preview" gate
+=======
+      setGoalActive(true);
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
       onGoalChange?.();
     }
 
     const allDone = result.checklist.length > 0 && result.checklist.every((c) => c.status === "completed");
     if (allDone) {
       completeSession();
+<<<<<<< HEAD
       onGoalChange?.();
     }
 
@@ -377,10 +457,18 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
     const effectiveReply = isLowConfidence
       ? "I'm not fully confident which option is correct. Please verify before continuing."
       : (result.walkthroughStep || result.reply);
+=======
+      setGoalActive(false);
+      onGoalChange?.();
+    }
+
+    if (silent && result.highlightElementRef) return;
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 
     const assistantMessage: ChatMessage = {
       id: createId(),
       role: "assistant",
+<<<<<<< HEAD
       content: effectiveReply,
       timestamp: Date.now(),
       checklist: result.checklist,
@@ -388,6 +476,12 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
       reason: isLowConfidence ? undefined : result.reason,
       confidence: result.confidence,
       isOfficialSource: result.isOfficialSource
+=======
+      content: result.walkthroughStep || result.reply,
+      timestamp: Date.now(),
+      checklist: result.checklist,
+      formFields: result.formFields
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
     };
 
     setChatMessages((prev) => {
@@ -412,7 +506,10 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
       const trimmed = text.trim();
       if (!trimmed || loading) return;
 
+<<<<<<< HEAD
       setShowProactive(false);
+=======
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
       const userMessage: ChatMessage = { id: createId(), role: "user", content: trimmed, timestamp: Date.now() };
       const history = [...chatMessages, userMessage];
       setChatMessages(history);
@@ -458,6 +555,10 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
         // handleResponse adds the assistant reply — no need for a fake user message
         handleResponse(result);
         if (result.goalSession || result.taskLabel) {
+<<<<<<< HEAD
+=======
+          setGoalActive(true);
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
           onGoalChange?.();
         }
       }
@@ -466,6 +567,7 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
     }
   }, [chatMessages, runAssistant, handleResponse, onStatus, onGoalChange]);
 
+<<<<<<< HEAD
   const handleCancelGoal = useCallback(() => {
     cancelSession();
     clearGuidanceHighlights(document);
@@ -473,6 +575,8 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
     onGoalChange?.();
   }, [onGoalChange]);
 
+=======
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
   // Auto-scan: give user a 1-sentence page context on first open.
   // hasScanRef persists across close/reopen since the component stays mounted.
   useEffect(() => {
@@ -480,6 +584,7 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
     hasScanRef.current = true;
     const timer = setTimeout(async () => {
       if (!runAssistantRef.current) return;
+<<<<<<< HEAD
       const cls = classificationRef.current;
       const scanQuestion = cls?.autoScanQuestion ?? "In one sentence, what is this page for and what can I do here?";
       try {
@@ -491,10 +596,24 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
           applyGuidanceFromResponse(document, result.highlightElementRef, result.highlightTooltip ?? undefined);
         }
         if (result.reply) {
+=======
+      try {
+        setLoading(true);
+        const result = await runAssistantRef.current(
+          "In one sentence, what is this page for and what can I do here?",
+          chatMessagesRef.current,
+          true
+        );
+        if (result?.reply) {
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
           setChatMessages((prev) => [
             ...prev,
             { id: "auto-scan", role: "assistant" as const, content: result.reply, timestamp: Date.now() }
           ]);
+<<<<<<< HEAD
+=======
+          // Surface the summary to ContentApp so TTS has meaningful text to read
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
           onPageSummaryRef.current?.(result.reply);
         }
       } catch {
@@ -515,11 +634,16 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
 
   function handleSubmit(event: React.FormEvent): void { event.preventDefault(); sendMessage(input); }
   function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>): void {
+<<<<<<< HEAD
     // Stop propagation so Gmail/YouTube/etc. capture listeners don't steal keypresses
     event.stopPropagation();
     if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendMessage(input); }
   }
   function stopKeyProp(event: React.SyntheticEvent): void { event.stopPropagation(); }
+=======
+    if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendMessage(input); }
+  }
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 
   return (
     <div className="na-section na-chat-section">
@@ -532,15 +656,20 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
 
       <div className="na-chat-body">
 
+<<<<<<< HEAD
         {/* Goal Card — shown whenever a goal session exists (active, paused, or complete) */}
         {showGoalCard && sessionSnapshot ? (
           <GoalCard session={sessionSnapshot} onCancel={handleCancelGoal} />
         ) : walkthroughMode ? (
+=======
+        {walkthroughMode ? (
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
           <div className="na-walkthrough-badge">
             <Sparkles size={12} /> Walkthrough active — complete each step and I'll guide you forward.
           </div>
         ) : null}
 
+<<<<<<< HEAD
         {/* Proactive recommendation chip — dismissed on first user message or click */}
         {showProactive && !showGoalCard && !walkthroughMode && classificationRef.current?.proactiveLabel ? (
           <div className="na-proactive-action">
@@ -571,6 +700,15 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
         ) : null}
 
         {!walkthroughMode && !goalActive && !showGoalCard ? (
+=======
+        {goalActive && !walkthroughMode && getSession()?.status === "active" ? (
+          <div className="na-walkthrough-badge">
+            <Sparkles size={12} /> Goal in progress — I'll guide you as the page changes.
+          </div>
+        ) : null}
+
+        {!walkthroughMode && !goalActive ? (
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
           <div className="na-suggestions" aria-label="Suggested actions">
             <button
               type="button"
@@ -596,8 +734,12 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
           </div>
         ) : null}
 
+<<<<<<< HEAD
         {/* ChecklistView only for walkthrough mode without an active goal session */}
         {!showGoalCard ? <ChecklistView items={checklist} /> : null}
+=======
+        <ChecklistView items={checklist} />
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 
         {confusionSignals.length > 0 ? (
           <div className="na-api-banner" role="alert" style={{ borderColor: "rgba(251, 191, 36, 0.4)", background: "rgba(251, 191, 36, 0.08)" }}>
@@ -610,6 +752,7 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
         <div className="na-chat-messages" role="log" aria-live="polite" aria-relevant="additions">
           {chatMessages.map((message) => (
             <div key={message.id} className={`na-chat-bubble ${message.role === "user" ? "na-chat-user" : "na-chat-assistant"}`}>
+<<<<<<< HEAD
               {message.isOfficialSource ? (
                 <div className="na-official-badge">✓ Official Source</div>
               ) : null}
@@ -620,6 +763,9 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
               {message.confidence === "high" && message.role === "assistant" ? (
                 <div className="na-confidence na-confidence-high">✓ High confidence</div>
               ) : null}
+=======
+              {message.content}
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
               {message.formFields && message.formFields.length > 0 ? (
                 <div className="na-form-hints">
                   {message.formFields.slice(0, 4).map((field) => (
@@ -645,8 +791,11 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={handleKeyDown}
+<<<<<<< HEAD
             onKeyUp={stopKeyProp}
             onKeyPress={stopKeyProp}
+=======
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
             placeholder={isFirstTimeMode
               ? 'Type your question... e.g. "Help me apply here"'
               : 'Type your question... e.g. "Help me fill this form"'

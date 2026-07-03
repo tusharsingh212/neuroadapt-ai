@@ -118,9 +118,12 @@ export interface ChatMessage {
   timestamp: number;
   checklist?: ChecklistItem[];
   formFields?: FormFieldGuide[];
+<<<<<<< HEAD
   reason?: string;
   confidence?: "high" | "medium" | "low";
   isOfficialSource?: boolean;
+=======
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 }
 
 export interface ChecklistItem {
@@ -185,9 +188,12 @@ export interface TaskAssistantResult {
   goalSession?: GoalSession;
   estimatedTime?: string;
   estimatedSteps?: number;
+<<<<<<< HEAD
   reason?: string;
   confidence?: "high" | "medium" | "low";
   isOfficialSource?: boolean;
+=======
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 }
 
 export type OverlayMode =
@@ -221,9 +227,13 @@ export interface ConfusionSignal {
 export interface DomAction {
   action: "move" | "hide" | "style" | "addClass" | "changeText";
   elementRef: string;
+<<<<<<< HEAD
   cssSelector?: string;
   targetRef?: string;
   targetSelector?: string;
+=======
+  targetRef?: string;
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
   position?: "before" | "after" | "inside-start" | "inside-end";
   cssStyles?: Record<string, string>;
   classes?: string[];

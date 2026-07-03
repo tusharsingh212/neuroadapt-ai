@@ -1,3 +1,8 @@
+<<<<<<< HEAD
+=======
+// Phase 2 note: NA_RUN_ANALYSIS and NA_RUN_TASK_ASSISTANT will be routed through
+// the backend API instead of calling Gemini directly. See src/shared/apiClient.ts.
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 
 import type {
   AnalysisReport, AiAnalysisResult, ChatMessage, ChecklistItem, ExtensionSettings,

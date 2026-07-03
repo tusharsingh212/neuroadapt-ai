@@ -1,3 +1,9 @@
+<<<<<<< HEAD
+=======
+// Phase 2: All AI calls in this file will be replaced with requests to the
+// NeuroAdapt backend API. See src/shared/apiClient.ts for the planned interface.
+// Until then, set BACKEND_GEMINI_API_KEY below to enable AI features during development.
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 
 import { DEFAULT_SETTINGS } from "@/shared/types";
 import { analyzeWithGemini } from "@/shared/gemini";
@@ -15,7 +21,11 @@ import type { AiAnalysisResult, TaskAssistantResult } from "@/shared/types";
 // To enable AI features during local development, paste a valid Gemini key here.
 const BACKEND_GEMINI_API_KEY: string =
   import.meta.env.VITE_GEMINI_API_KEY || "";
+<<<<<<< HEAD
 const DEFAULT_MODEL = "gemini-2.0-flash";
+=======
+const DEFAULT_MODEL = "gemini-1.5-flash";
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 
 const CACHE_MAX_SIZE = 50;
 const analysisCache = new Map<string, AiAnalysisResult>();
@@ -131,6 +141,7 @@ chrome.runtime.onMessage.addListener(
           }
 
           await throttleGemini();
+<<<<<<< HEAD
           let analysis: AiAnalysisResult;
           try {
             analysis = await analyzeWithGemini({
@@ -156,6 +167,15 @@ chrome.runtime.onMessage.addListener(
               question: msg.payload.question,
             });
           }
+=======
+          const analysis = await analyzeWithGemini({
+            apiKey: BACKEND_GEMINI_API_KEY,
+            model: DEFAULT_MODEL,
+            summary: msg.payload.summary,
+            preferredPersona: msg.payload.preferredPersona,
+            question: msg.payload.question,
+          });
+>>>>>>> 7ecace2cdad4876ae7c753f95748df15ab821191
 
           analysisCache.set(key, analysis);
           trimCache(analysisCache as Map<string, unknown>, CACHE_MAX_SIZE);
