@@ -225,3 +225,14 @@ export function removeAllOverlays(doc: Document): void {
   removeSimplifiedHelpers(doc);
   try { localStorage.removeItem(storageKeyFor(doc)); } catch { }
 }
+
+// Removes visual overlay state without clearing saved user preferences.
+// Use this during page reset so the user's chosen modes re-apply on next open.
+export function removeOverlayVisuals(doc: Document): void {
+  const root = doc.documentElement;
+  (Object.keys(OVERLAY_CSS) as OverlayMode[]).forEach((mode) => {
+    root.classList.remove(`na-overlay-${mode}`);
+  });
+  removeInjectedStyles(doc, OVERLAY_STYLE_ID);
+  removeSimplifiedHelpers(doc);
+}

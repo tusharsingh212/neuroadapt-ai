@@ -1,4 +1,4 @@
-﻿import { motion } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   Bot,
   ChevronDown,
@@ -12,11 +12,13 @@ import { useEffect, useRef, useState } from "react";
 
 import { applyAdaptation, resetAdaptation } from "@/shared/adaptation";
 import { sendRuntimeMessage } from "@/shared/chrome";
-import { applyDomActions, resetDomActions, clearGuidanceHighlights } from "@/shared/elementGuide";
+import { applyDomActions } from "@/shared/elementGuide";
 import { simplifyPage } from "@/shared/simplifyPage";
 import { HeuristicObserver, type HeuristicSignal } from "@/shared/heuristics";
 import { buildAnalysisReport, inspectPage } from "@/shared/pageInsights";
 import { extractPageSummary } from "@/shared/pageSummary";
+import { restoreOriginalPage } from "@/shared/cleanup";
+import { config } from "@/shared/config";
 import {
   DEFAULT_SETTINGS,
   type AnalysisReport,
@@ -55,6 +57,19 @@ function feedLines(report: AnalysisReport, insights: PageInsights): string[] {
   return lines;
 }
 
+// Returns true when a mutation was caused by NeuroAdapt's own DOM writes,
+// avoiding feedback loops in the MutationObserver.
+function isOwnMutation(mutation: MutationRecord): boolean {
+  const t = mutation.target;
+  if (!(t instanceof Element)) return false;
+  return (
+    t.id === "neuroadapt-host" ||
+    t.id === "neuroadapt-action-bar" ||
+    t.closest?.("#neuroadapt-host") !== null ||
+    t.closest?.("[data-neuroadapt-ui]") !== null
+  );
+}
+
 export function ContentApp(): JSX.Element {
   const [settings, setSettings] = useState<ExtensionSettings>(DEFAULT_SETTINGS);
   const [insights, setInsights] = useState<PageInsights>(() => inspectPage(document));
@@ -66,19 +81,13 @@ export function ContentApp(): JSX.Element {
   });
   const [, setMessages] = useState<string[]>(runtime.messages);
 
-  // collapsed: whether the panel is minimised to the bubble
   const [collapsed, setCollapsed] = useState(false);
-  // visible: user has intentionally opened the panel OR extension is enabled from popup
   const [visible, setVisible] = useState(false);
-
   const [comparison, setComparison] = useState<"original" | "adapted">(DEFAULT_SETTINGS.comparisonMode);
   const [busy, setBusy] = useState<"analyze" | "adapt" | "reset" | null>(null);
-
   const [confusionSignals, setConfusionSignals] = useState<ConfusionSignal[]>([]);
   const [pendingSuggestion, setPendingSuggestion] = useState<HeuristicSignal | null>(null);
   const [, setSidebarVisible] = useState(false);
-
-  // Text from the AI auto-scan so speakSummary reads something meaningful
   const [pageSummaryText, setPageSummaryText] = useState("");
 
   const settingsRef = useRef(settings);
@@ -89,10 +98,12 @@ export function ContentApp(): JSX.Element {
   const panelOpen = showAssistant && !collapsed;
   const bubbleVisible = !panelOpen;
 
+  // Keep settingsRef in sync for use inside callbacks and observers.
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
 
+  // Load persisted settings once on mount.
   useEffect(() => {
     let mounted = true;
     loadSettings().then((next) => {
@@ -103,15 +114,11 @@ export function ContentApp(): JSX.Element {
       setInsights(nextInsights);
       setAnalysis(nextAnalysis);
       setComparison(next.comparisonMode);
-      setMessages(next.enabled
+      const feed = next.enabled
         ? feedLines(nextAnalysis, nextInsights)
-        : ["Adaptive assistant loaded.", "Awaiting page analysis."]
-      );
-      setRuntime({
-        state: next.enabled ? "done" : "idle",
-        messages: next.enabled ? feedLines(nextAnalysis, nextInsights) : ["Adaptive assistant loaded.", "Awaiting page analysis."],
-        lastUpdated: Date.now()
-      });
+        : ["Adaptive assistant loaded.", "Awaiting page analysis."];
+      setMessages(feed);
+      setRuntime({ state: next.enabled ? "done" : "idle", messages: feed, lastUpdated: Date.now() });
       setVisible(next.enabled);
       if (next.enabled && next.comparisonMode === "adapted") {
         applyAdaptation(document, next, nextInsights);
@@ -122,11 +129,15 @@ export function ContentApp(): JSX.Element {
     return () => { mounted = false; };
   }, []);
 
+  // Cross-tab settings sync.
   useEffect(() => subscribeToSettings((next) => {
     setSettings(next);
     setComparison(next.comparisonMode);
   }), []);
 
+  // Re-apply adaptation when persona or enabled state changes.
+  // Intentionally excludes `insights` — insights update on every DOM mutation
+  // and re-running adaptation on every mutation causes a thrashing loop.
   useEffect(() => {
     if (!settings.enabled || comparison === "original") {
       resetAdaptation(document);
@@ -134,10 +145,18 @@ export function ContentApp(): JSX.Element {
     }
     applyAdaptation(document, { ...settings, comparisonMode: comparison }, insights);
     setVisible(true);
-  }, [settings, comparison, insights]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.enabled, settings.persona, comparison]);
 
+  // MutationObserver: re-inspect page structure on external DOM changes.
+  // Filters own mutations and attribute-only changes to prevent thrashing.
   useEffect(() => {
-    const observer = new MutationObserver(() => {
+    const observer = new MutationObserver((mutations) => {
+      // Ignore mutations caused by NeuroAdapt itself.
+      if (mutations.every(isOwnMutation)) return;
+      // Ignore attribute-only mutations — too noisy, not needed for re-analysis.
+      if (!mutations.some((m) => m.type === "childList")) return;
+
       if (debounceRef.current) window.clearTimeout(debounceRef.current);
       debounceRef.current = window.setTimeout(() => {
         const nextInsights = inspectPage(document);
@@ -149,18 +168,19 @@ export function ContentApp(): JSX.Element {
           setRuntime((s) => ({ ...s, messages: nextFeed, lastUpdated: Date.now() }));
           return nextFeed;
         });
-        if (settingsRef.current.enabled && settingsRef.current.comparisonMode === "adapted") {
-          applyAdaptation(document, settingsRef.current, nextInsights);
-        }
-      }, 220);
+        // Note: applyAdaptation is NOT called here. New elements automatically
+        // inherit styles from the CSS classes on <html>. Data attribute marking
+        // runs only on explicit Adapt actions to avoid repeated DOM mutations.
+      }, config.mutationDebounceMs);
     });
-    observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true });
+    observer.observe(document.documentElement, { subtree: true, childList: true });
     return () => {
       observer.disconnect();
       if (debounceRef.current) { window.clearTimeout(debounceRef.current); debounceRef.current = null; }
     };
   }, []);
 
+  // Chrome message listener for popup ↔ content communication.
   useEffect(() => {
     if (typeof chrome === "undefined" || !chrome.runtime?.onMessage) return;
     const listener = (
@@ -198,10 +218,9 @@ export function ContentApp(): JSX.Element {
             persona: message.payload?.persona ?? settingsRef.current.persona,
             comparisonMode: "adapted"
           };
-          // 1. Instant visual transformation — happens before Gemini
+          // Instant visual transformation fires before Gemini responds.
           simplifyCleanupRef.current?.();
           simplifyCleanupRef.current = simplifyPage(document, nextSettings.persona);
-          // 2. Gemini analysis runs in background; page already looks different
           const nextInsights = inspectPage(document);
           const nextAnalysis = await runGeminiAnalysis(nextSettings);
           const nextFeed = feedLines(nextAnalysis, nextInsights);
@@ -226,8 +245,8 @@ export function ContentApp(): JSX.Element {
         setAnalysis(nextAnalysis); setMessages(nextRuntime.messages); setRuntime(nextRuntime);
         setVisible(false);
         saveSettings(nextSettings).catch(() => undefined);
-        resetAdaptation(document); resetDomActions(document);
-        simplifyCleanupRef.current?.();
+        // Use unified cleanup — fixes missing clearGuidanceHighlights in this path.
+        restoreOriginalPage(document, { simplifyCleanup: simplifyCleanupRef.current });
         simplifyCleanupRef.current = null;
         sendResponse({ settings: nextSettings, insights: nextInsights, analysis: nextAnalysis, runtime: nextRuntime } satisfies NeuroAdaptStateMessage);
         return false;
@@ -276,7 +295,6 @@ export function ContentApp(): JSX.Element {
       setMessages((current) => [msg, ...current].slice(0, 5));
       return heuristicReport;
     }
-    // Persona CSS is already injected by simplifyPage; only apply Gemini's page-specific output
     if (response.analysis.customCss || (response.analysis.domActions?.length ?? 0) > 0) {
       applyDomActions(document, response.analysis.domActions ?? [], response.analysis.customCss || undefined);
     }
@@ -287,10 +305,8 @@ export function ContentApp(): JSX.Element {
     setBusy("adapt");
     const nextSettings: ExtensionSettings = { ...settingsRef.current, enabled: true, comparisonMode: "adapted" };
     await persistSettings(nextSettings);
-    // 1. Instant visual transformation
     simplifyCleanupRef.current?.();
     simplifyCleanupRef.current = simplifyPage(document, nextSettings.persona);
-    // 2. Gemini page-specific enhancements (after user already sees the change)
     const nextInsights = inspectPage(document);
     const nextAnalysis = await runGeminiAnalysis(nextSettings);
     const nextFeed = feedLines(nextAnalysis, nextInsights);
@@ -310,15 +326,13 @@ export function ContentApp(): JSX.Element {
     setMessages(["Original interface restored."]);
     setRuntime({ state: "idle", messages: ["Original interface restored."], lastUpdated: Date.now() });
     setVisible(false);
-    resetAdaptation(document); resetDomActions(document); clearGuidanceHighlights(document);
-    simplifyCleanupRef.current?.();
+    restoreOriginalPage(document, { simplifyCleanup: simplifyCleanupRef.current });
     simplifyCleanupRef.current = null;
     setBusy(null);
   }
 
   function speakSummary(): void {
     if (!("speechSynthesis" in window)) return;
-    // Use the AI page summary if available, otherwise fall back to insights summary
     const text = pageSummaryText || insights.summary || analysis.observedChallenges.join(". ") || "No summary available.";
     const utterance = new SpeechSynthesisUtterance(text);
     window.speechSynthesis.cancel();
@@ -329,7 +343,6 @@ export function ContentApp(): JSX.Element {
   useEffect(() => {
     const heuristics = new HeuristicObserver((signal) => {
       setConfusionSignals(signal.signals);
-      // Show the hint card near the bubble — don't force the full panel open.
       if (signal.signals.some((s) => s.severity === "high")) {
         setPendingSuggestion(signal);
       }
@@ -359,7 +372,6 @@ export function ContentApp(): JSX.Element {
   }
 
   function dismissHeuristicSuggestion(): void { setPendingSuggestion(null); }
-
   function openPanel(): void { setVisible(true); setCollapsed(false); }
 
   const resolvedPersona = settings.persona;
@@ -367,19 +379,10 @@ export function ContentApp(): JSX.Element {
   return (
     <div className="na-root" aria-live="polite">
 
-      {/* ── Full panel ─────────────────────────────────────────────────
-          Always kept in the DOM so TaskAssistantPanel never loses its
-          chat history or auto-scan state when the user closes the panel.
-          Visibility + pointer-events toggle it on/off; framer-motion
-          animates the opacity/position so enter/exit feel polished.
-      ───────────────────────────────────────────────────────────────── */}
       <motion.div
           className="na-shell"
           initial={false}
-          animate={panelOpen
-            ? { opacity: 1, y: 0, scale: 1 }
-            : { opacity: 0, y: 24, scale: 0.98 }
-          }
+          animate={panelOpen ? { opacity: 1, y: 0, scale: 1 } : { opacity: 0, y: 24, scale: 0.98 }}
           transition={{ duration: 0.24 }}
           style={{
             visibility: panelOpen ? "visible" : "hidden",
@@ -389,7 +392,6 @@ export function ContentApp(): JSX.Element {
         >
           <div className="na-card">
 
-            {/* Header */}
             <div className="na-header">
               <div className="na-brand">
                 <div className="na-mark"><Sparkles size={18} /></div>
@@ -407,7 +409,6 @@ export function ContentApp(): JSX.Element {
 
             <div className="na-body">
 
-              {/* Heuristic suggestion (only inside open panel) */}
               {pendingSuggestion ? (
                 <div className="na-section na-suggestion-banner" role="alertdialog" aria-label="Adaptation suggestion">
                   <p className="na-text" style={{ marginBottom: 10 }}>
@@ -425,7 +426,6 @@ export function ContentApp(): JSX.Element {
                 </div>
               ) : null}
 
-              {/* Chat — TaskAssistantPanel stays mounted even when panel is visually hidden */}
               <TaskAssistantPanel
                 settings={settings}
                 persona={resolvedPersona}
@@ -435,10 +435,8 @@ export function ContentApp(): JSX.Element {
                 onPageSummary={(text) => setPageSummaryText(text)}
               />
 
-              {/* Reading & display options (collapsed by default) */}
               <OverlayPanel />
 
-              {/* Footer actions */}
               <div className="na-footer-row">
                 <button
                   type="button"
@@ -470,7 +468,6 @@ export function ContentApp(): JSX.Element {
           </div>
         </motion.div>
 
-      {/* ── Bubble + hint card ─────────────────────────────────────── */}
       {bubbleVisible ? (
         <motion.div
           initial={{ opacity: 0, scale: 0.8 }}
@@ -479,7 +476,6 @@ export function ContentApp(): JSX.Element {
           transition={{ duration: 0.2 }}
           className="na-shell na-collapsed"
         >
-          {/* Hint card floats above the bubble when heuristics detect confusion */}
           {pendingSuggestion ? (
             <motion.div
               key="hint-card"
@@ -523,7 +519,6 @@ export function ContentApp(): JSX.Element {
         </motion.div>
       ) : null}
 
-      {/* Task sidebar — shown only when the main panel is collapsed so goal info isn't duplicated */}
       {!panelOpen ? (
         <TaskSidebar onRequestReanalysis={() => {
           if (settings.enabled) applyAdaptation(document, settings, inspectPage(document));

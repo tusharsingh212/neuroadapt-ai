@@ -3,6 +3,7 @@ import { checkOfficialUrl } from "@/shared/pageClassifier";
 import { parseTaskAssistantJson, validateTaskAssistantResult } from "@/shared/taskAssistantSchema";
 import type { AccessibilityDetail, ChatMessage, ChecklistItem, ConfusionSignal, GoalSession, PersonaId, TaskAssistantResult } from "@/shared/types";
 import { callGemini } from "@/shared/geminiClient";
+import { logger } from "@/shared/logger";
 
 export interface TaskAssistantRequest {
   apiKey: string;
@@ -326,7 +327,7 @@ export async function analyzeTaskWithGemini(
       generatedAt: Date.now()
     };
   } catch (error) {
-    console.error("[NeuroAdapt] Gemini task assistant error:", error);
+    logger.error("Gemini task assistant error:", error);
     if (allowFallback) {
       return heuristicFallback(request.context, request.question, request.goalSession);
     }

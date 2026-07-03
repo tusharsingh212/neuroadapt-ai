@@ -54,6 +54,9 @@ function statusToneClass(kind: "info" | "success" | "warning" | "error"): string
 
 export function PopupApp(): JSX.Element {
   const [settings, setSettings] = useState<ExtensionSettings>(DEFAULT_SETTINGS);
+  // Tracks whether the initial settings load has completed.
+  // Prevents the auto-save effect from overwriting stored settings with defaults.
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [statusTone, setStatusTone] = useState<"info" | "success" | "warning" | "error">("info");
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -62,17 +65,16 @@ export function PopupApp(): JSX.Element {
   const [foundIssues, setFoundIssues] = useState<AiIssue[]>([]);
   const [issuesOpen, setIssuesOpen] = useState(true);
 
+  // Load persisted settings on mount. Does NOT trigger a save.
   useEffect(() => {
     let mounted = true;
     loadSettings().then((next) => {
-      if (mounted) setSettings(next);
+      if (!mounted) return;
+      setSettings(next);
+      setSettingsLoaded(true);
     });
     return () => { mounted = false; };
   }, []);
-
-  useEffect(() => {
-    saveSettings(settings).catch(() => undefined);
-  }, [settings]);
 
   const selectedPersona = useMemo(
     () => PERSONA_OPTIONS.find((p) => p.id === settings.persona) ?? PERSONA_OPTIONS[0],
@@ -88,9 +90,11 @@ export function PopupApp(): JSX.Element {
     }
   }
 
+  // Only saves when settings have been loaded — prevents overwriting stored
+  // values with DEFAULT_SETTINGS on the first render before loadSettings resolves.
   async function persistSettings(next: ExtensionSettings): Promise<void> {
     setSettings(next);
-    await saveSettings(next);
+    if (settingsLoaded) await saveSettings(next);
   }
 
   async function helpWithPage(): Promise<void> {
