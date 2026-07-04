@@ -71,7 +71,7 @@ You can still run the extension without a Gemini key. In that case, NeuroAdapt f
 Open PowerShell in the project folder:
 
 ```powershell
-cd C:\Users\kamra\Desktop\Hackathons\neuroadapt-ai
+cd neuroadapt-ai
 npm.cmd install
 ```
 
@@ -86,7 +86,7 @@ npm.cmd run build
 This creates the production extension files in:
 
 ```text
-C:\Users\kamra\Desktop\Hackathons\neuroadapt-ai\dist
+neuroadapt-ai\dist
 ```
 
 ## Load The Extension In Chrome
@@ -98,7 +98,7 @@ C:\Users\kamra\Desktop\Hackathons\neuroadapt-ai\dist
 5. Select this folder:
 
 ```text
-C:\Users\kamra\Desktop\Hackathons\neuroadapt-ai\dist
+dist
 ```
 
 6. NeuroAdapt AI should appear in the extension list.
