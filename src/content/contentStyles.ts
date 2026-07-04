@@ -17,7 +17,7 @@
     right: 18px;
     bottom: 18px;
     width: min(392px, calc(100vw - 24px));
-    max-height: calc(100vh - 24px);
+    max-height: calc(100vh - 24px - var(--neuroadapt-topbar-h, 0px));
     display: flex;
     flex-direction: column;
     pointer-events: auto;

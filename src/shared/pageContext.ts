@@ -38,8 +38,16 @@ function clampText(value: string, max = 180): string {
 function visible(element: Element): element is HTMLElement {
   if (!(element instanceof HTMLElement)) return false;
   const style = window.getComputedStyle(element);
+  if (style.visibility === "hidden" || style.display === "none") return false;
+  // Excludes "skip to content"-style utility links that are visually hidden via a
+  // 1px clip box (the standard sr-only pattern) rather than display/visibility.
+  if (style.clip === "rect(0px, 0px, 0px, 0px)" || style.clipPath === "inset(50%)") return false;
   const rect = element.getBoundingClientRect();
-  return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+  if (rect.width <= 1 || rect.height <= 1) return false;
+  // Excludes elements parked off-canvas (e.g. left/top pushed far outside the
+  // viewport) until they receive keyboard focus - a common skip-link technique.
+  if (rect.bottom <= 0 || rect.right <= 0 || rect.top >= window.innerHeight || rect.left >= window.innerWidth) return false;
+  return true;
 }
 
 function labelFor(element: Element, root: Document): string {

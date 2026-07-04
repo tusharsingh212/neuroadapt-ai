@@ -43,7 +43,7 @@ export function DemoApp(): JSX.Element {
     <main
       className={cx(
         "min-h-screen transition-all duration-500",
-        lightTheme ? "bg-gradient-to-br from-white via-sky-50 to-emerald-50 text-slate-900" : "text-slate-50"
+        lightTheme ? "bg-gradient-to-br from-white via-sky-50 to-emerald-50 text-slate-900" : "bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-50"
       )}
     >
       <div className={cx("absolute inset-0 subtle-grid transition-opacity duration-500", lightTheme ? "opacity-15" : "opacity-35")} />
@@ -58,7 +58,7 @@ export function DemoApp(): JSX.Element {
             "mb-4 rounded-[28px] px-5 py-4 transition-all duration-500",
             lightTheme
               ? "border border-sky-200/70 bg-white/90 shadow-[0_22px_60px_rgba(96,165,250,0.12)] backdrop-blur-xl"
-              : "glass-panel-strong"
+              : "border border-white/10 bg-white/5 backdrop-blur-xl"
           )}
         >
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -148,7 +148,7 @@ export function DemoApp(): JSX.Element {
           </div>
         ) : null}
 
-        <div className={cx("grid gap-4 transition-all duration-500 xl:grid-cols-[260px_minmax(0,1fr)_320px]", elderly && "xl:grid-cols-[240px_minmax(0,1fr)]", firstTime && "xl:grid-cols-[240px_minmax(0,1fr)]")}>
+        <div className={cx("grid gap-4 transition-all duration-500 xl:grid-cols-[260px_minmax(0,1fr)_320px]", elderly && "xl:grid-cols-[240px_minmax(0,1fr)]", firstTime && "xl:grid-cols-[minmax(0,1fr)_320px]")}>
           {!firstTime ? (
             <SoftCard className={cx("space-y-4 transition-all duration-500", lightTheme ? "border-sky-200/70 bg-white/90 text-slate-900" : "border-white/10 bg-slate-950/55")}>
               <div className="flex items-center justify-between">
@@ -237,7 +237,7 @@ export function DemoApp(): JSX.Element {
                   <div className={cx("rounded-3xl p-4 transition-all duration-500", lightTheme ? "border border-sky-200 bg-white" : "border border-white/8 bg-slate-950/35")}>
                     <div className="mb-3 flex items-center justify-between">
                       <SectionTitle title="Appointments" subtitle={elderly ? "Bigger, clearer, easier to tap." : "Small text, small buttons, and tight spacing by design."} />
-                      <button className={cx("rounded-full font-semibold transition", elderly ? "border border-sky-200 bg-white text-sky-800 text-sm px-4 py-3" : "border border-white/10 bg-white/5 text-slate-200 text-[11px] px-2.5 py-1.5")}>
+                      <button className={cx("rounded-full font-semibold transition", elderly ? "border border-sky-200 bg-white text-sky-800 text-sm px-4 py-3" : lightTheme ? "border border-sky-200 bg-white text-sky-800 text-[11px] px-2.5 py-1.5" : "border border-white/10 bg-white/5 text-slate-200 text-[11px] px-2.5 py-1.5")}>
                         Add
                       </button>
                     </div>
@@ -271,7 +271,7 @@ export function DemoApp(): JSX.Element {
                               <td className={cx("px-3 py-3", lightTheme ? "text-slate-700 text-base" : "text-slate-300")}>{row[1]}</td>
                               <td className={cx("px-3 py-3", lightTheme ? "text-slate-700 text-base" : "text-slate-300")}>{row[2]}</td>
                               <td className="px-3 py-3">
-                                <button className={cx("rounded-full font-semibold transition", elderly ? "border border-sky-200 bg-sky-50 text-sky-800 text-sm px-4 py-3" : "border border-cyan-400/20 bg-cyan-400/10 text-cyan-50 text-[11px] px-2.5 py-1")}>
+                                <button className={cx("rounded-full font-semibold transition", elderly ? "border border-sky-200 bg-sky-50 text-sky-800 text-sm px-4 py-3" : lightTheme ? "border border-cyan-200 bg-cyan-50 text-cyan-800 text-[11px] px-2.5 py-1" : "border border-cyan-400/20 bg-cyan-400/10 text-cyan-50 text-[11px] px-2.5 py-1")}>
                                   {row[3]}
                                 </button>
                               </td>

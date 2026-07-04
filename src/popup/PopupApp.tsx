@@ -18,7 +18,8 @@ import {
   DEFAULT_SETTINGS,
   PERSONA_OPTIONS,
   type AiIssue,
-  type ExtensionSettings
+  type ExtensionSettings,
+  type PersonaId
 } from "@/shared/types";
 import { loadSettings, saveSettings } from "@/shared/storage";
 import { Pill, SectionTitle, SoftCard } from "@/shared/ui";
@@ -42,13 +43,13 @@ function severityDot(severity: AiIssue["severity"]): string {
 function statusToneClass(kind: "info" | "success" | "warning" | "error"): string {
   switch (kind) {
     case "success":
-      return "border-emerald-400/20 bg-emerald-400/10 text-emerald-100";
+      return "border-emerald-200 bg-emerald-50 text-emerald-800";
     case "warning":
-      return "border-amber-400/20 bg-amber-400/10 text-amber-100";
+      return "border-amber-200 bg-amber-50 text-amber-800";
     case "error":
-      return "border-rose-400/20 bg-rose-400/10 text-rose-100";
+      return "border-rose-200 bg-rose-50 text-rose-800";
     default:
-      return "border-cyan-400/20 bg-cyan-400/10 text-cyan-100";
+      return "border-cyan-200 bg-cyan-50 text-cyan-800";
   }
 }
 
@@ -97,11 +98,11 @@ export function PopupApp(): JSX.Element {
     if (settingsLoaded) await saveSettings(next);
   }
 
-  async function helpWithPage(): Promise<void> {
+  async function helpWithPage(personaOverride?: PersonaId): Promise<void> {
     setBusyAction("adapt");
     setFoundIssues([]);
     showStatus("Analyzing page with AI...", "info", false);
-    const next = { ...settings, enabled: true, comparisonMode: "adapted" as const };
+    const next = { ...settings, enabled: true, comparisonMode: "adapted" as const, persona: personaOverride ?? settings.persona };
     setSettings(next);
     try {
       const activeTab = await queryActiveTab();
@@ -198,7 +199,7 @@ export function PopupApp(): JSX.Element {
             {!settings.enabled ? (
               <button
                 type="button"
-                onClick={helpWithPage}
+                onClick={() => helpWithPage()}
                 disabled={busyAction !== null}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 px-4 py-3 text-sm font-bold text-white transition hover:opacity-90 disabled:opacity-60"
               >
@@ -274,8 +275,9 @@ export function PopupApp(): JSX.Element {
                         <button
                           key={p.id}
                           type="button"
-                          onClick={() => persistSettings({ ...settings, persona: p.id })}
-                          className={`flex-1 rounded-2xl border px-3 py-2.5 text-left transition ${
+                          disabled={busyAction !== null}
+                          onClick={() => helpWithPage(p.id)}
+                          className={`flex-1 rounded-2xl border px-3 py-2.5 text-left transition disabled:opacity-60 ${
                             settings.persona === p.id
                               ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-800"
                               : "border-sky-200 bg-white text-slate-700 hover:bg-sky-50"

@@ -1,9 +1,83 @@
 import { getPersonaTransformCss } from "@/shared/personaCss";
-import { injectStylesSafely, removeInjectedStyles } from "@/shared/cspSafeStyles";
+import { applyInlineStylesFallback, injectStylesSafely, removeInjectedStyles } from "@/shared/cspSafeStyles";
 import type { PersonaId } from "@/shared/types";
 
 export const PERSONA_STYLE_ID = "neuroadapt-persona-css";
+const LIGHT_TOUCH_STYLE_ID = "neuroadapt-light-touch-css";
 const ACTION_BAR_ID = "neuroadapt-action-bar";
+
+// ─── Complexity detection ───────────────────────────────────────────────────────
+// Sites like GitHub build their layout from CSS Grid/flex rows with exact sizing
+// (toolbar rows, table-like file listings, sticky headers). Forcing backgrounds,
+// borders, and button box-model changes on arbitrary matched elements there causes
+// overlap and broken alignment, because those elements' surrounding rows were sized
+// around their original dimensions. Below a rough complexity threshold, the dramatic
+// full-redesign is safe and looks great (verified on the demo pages); above it, we
+// fall back to a much narrower set of changes that can't break layout.
+const COMPLEX_ELEMENT_COUNT = 1800;
+const COMPLEX_BUTTON_COUNT = 45;
+const COMPLEX_NAV_COUNT = 3;
+
+function isComplexPageStructure(doc: Document): boolean {
+  try {
+    if (doc.getElementsByTagName("*").length > COMPLEX_ELEMENT_COUNT) return true;
+    const buttonLike = doc.querySelectorAll('button,[role="button"],input[type="submit"],input[type="button"]').length;
+    if (buttonLike > COMPLEX_BUTTON_COUNT) return true;
+    const navLike = doc.querySelectorAll("nav,header,[role='navigation']").length;
+    if (navLike > COMPLEX_NAV_COUNT) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+// Approximate relative luminance of the page's own background, so the light-touch
+// mode can pick a text color that stays legible on the site's *actual* theme instead
+// of assuming light mode (which is what makes the dramatic mode fight dark-themed
+// sites like GitHub).
+function detectDarkBackground(doc: Document): boolean {
+  try {
+    const bg = getComputedStyle(doc.body).backgroundColor;
+    const channels = bg.match(/[\d.]+/g);
+    if (!channels || channels.length < 3) return false;
+    const [r, g, b] = channels.map(Number);
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance < 0.5;
+  } catch {
+    return false;
+  }
+}
+
+// ─── Light-touch mode: readability only, no structural/background overrides ────
+// Only touches font-size/line-height/spacing on text elements and a theme-aware text
+// color - never background-color, border, padding, or min-height - so it cannot
+// change any element's box dimensions and therefore cannot break a grid/flex row.
+function buildLightTouchCss(dark: boolean): string {
+  const text = dark ? "#f1f5f9" : "#1a1814";
+  const heading = dark ? "#ffffff" : "#0f172a";
+  return `
+    body, p, li, td, th, label, blockquote, figcaption, dt, dd {
+      font-size: max(1.08em, 16px) !important;
+      line-height: 1.7 !important;
+      color: ${text} !important;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      line-height: 1.35 !important;
+      color: ${heading} !important;
+    }
+    a {
+      text-decoration: underline !important;
+      text-underline-offset: 3px !important;
+    }
+    button, [role="button"], input, select, textarea {
+      font-size: max(1em, 15px) !important;
+    }
+    :focus-visible {
+      outline: 3px solid #2563eb !important;
+      outline-offset: 2px !important;
+    }
+  `;
+}
 
 const PRIMARY_KEYWORDS = [
   "submit","sign up","signup","get started","book","buy","checkout",
@@ -70,71 +144,114 @@ function accent(persona: PersonaId) {
 }
 
 // ─── Action bar ────────────────────────────────────────────────────────────────
-function buildActionBar(doc: Document, persona: PersonaId, ctaEl: HTMLElement | null): HTMLElement {
+// Every element below is styled via applyInlineStylesFallback (per-property CSSOM
+// mutation), never `.style.cssText =` or an inline `style=""` attribute in innerHTML —
+// both of the latter are "inline styles" under CSP's `style-src` and get silently
+// dropped on sites with a strict CSP that lacks `unsafe-inline`, which would leave the
+// whole bar unstyled/invisible even though the rest of simplifyPage's overrides apply.
+function buildActionBar(doc: Document, persona: PersonaId, ctaEl: HTMLElement | null, lightTouch: boolean): HTMLElement {
   doc.getElementById(ACTION_BAR_ID)?.remove();
   const c = accent(persona);
   const bar = doc.createElement("div");
   bar.id = ACTION_BAR_ID;
   bar.setAttribute("data-neuroadapt-ui", "1");
-  bar.style.cssText = [
-    "all:initial",
-    "display:flex",
-    "align-items:center",
-    "gap:10px",
-    "position:fixed",
-    "top:0",
-    "left:0",
-    "right:0",
-    "width:100%",
-    "z-index:2147483646",
-    `background:linear-gradient(135deg,${c.bgDark},${c.bg})`,
-    `color:${c.text}`,
-    "padding:10px 20px",
-    "box-shadow:0 4px 24px rgba(0,0,0,0.3),0 1px 0 rgba(255,255,255,0.1)",
-    "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif",
-    "box-sizing:border-box",
-    "min-height:62px",
-  ].join(";");
+  applyInlineStylesFallback(bar, {
+    all: "initial",
+    display: "flex",
+    "align-items": "center",
+    gap: "10px",
+    position: "fixed",
+    top: "0",
+    left: "0",
+    right: "0",
+    width: "100%",
+    "z-index": "2147483646",
+    background: `linear-gradient(135deg,${c.bgDark},${c.bg})`,
+    color: c.text,
+    padding: "10px 20px",
+    "box-shadow": "0 4px 24px rgba(0,0,0,0.3),0 1px 0 rgba(255,255,255,0.1)",
+    "font-family": "-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif",
+    "box-sizing": "border-box",
+    "min-height": "62px",
+  });
 
   const badge = doc.createElement("span");
-  badge.style.cssText = `all:initial;display:inline-flex;align-items:center;gap:8px;font-family:inherit;font-size:13px;font-weight:700;color:#fff;white-space:nowrap;background:rgba(0,0,0,0.22);border-radius:24px;padding:6px 14px;letter-spacing:0.01em`;
-  badge.innerHTML = `<span style="font-size:17px;all:initial;display:inline">${persona === "elderly" ? "♿" : "🧭"}</span><span style="all:initial;font-family:inherit;font-size:13px;font-weight:700;color:#fff">${persona === "elderly" ? "Accessibility Mode" : "Guided Mode"}</span>`;
+  applyInlineStylesFallback(badge, {
+    all: "initial",
+    display: "inline-flex",
+    "align-items": "center",
+    gap: "8px",
+    "font-family": "inherit",
+    "font-size": "13px",
+    "font-weight": "700",
+    color: "#fff",
+    "white-space": "nowrap",
+    background: "rgba(0,0,0,0.22)",
+    "border-radius": "24px",
+    padding: "6px 14px",
+    "letter-spacing": "0.01em",
+  });
+  const badgeIcon = doc.createElement("span");
+  applyInlineStylesFallback(badgeIcon, { all: "initial", "font-size": "17px", display: "inline" });
+  badgeIcon.textContent = persona === "elderly" ? "♿" : "🧭";
+  const badgeLabel = doc.createElement("span");
+  applyInlineStylesFallback(badgeLabel, { all: "initial", "font-family": "inherit", "font-size": "13px", "font-weight": "700", color: "#fff" });
+  badgeLabel.textContent = lightTouch
+    ? "Reading Mode"
+    : persona === "elderly" ? "Accessibility Mode" : "Guided Mode";
+  badge.append(badgeIcon, badgeLabel);
   bar.appendChild(badge);
 
   const spacer = doc.createElement("div");
-  spacer.style.cssText = "all:initial;flex:1;display:block";
+  applyInlineStylesFallback(spacer, { all: "initial", flex: "1", display: "block" });
   bar.appendChild(spacer);
 
   const hint = doc.createElement("span");
-  hint.style.cssText = "all:initial;display:inline;font-family:inherit;font-size:12px;color:rgba(255,255,255,0.75);font-style:italic;margin-right:8px";
-  hint.textContent = "Page has been redesigned for easier access";
+  applyInlineStylesFallback(hint, {
+    all: "initial",
+    display: "inline",
+    "font-family": "inherit",
+    "font-size": "12px",
+    color: "rgba(255,255,255,0.75)",
+    "font-style": "italic",
+    "margin-right": "8px",
+  });
+  hint.textContent = lightTouch
+    ? "Text enlarged for easier reading - this page's own layout is kept intact"
+    : "Page has been redesigned for easier access";
   bar.appendChild(hint);
 
   if (ctaEl) {
     const rawText = (ctaEl.textContent || ctaEl.getAttribute("value") || "Main Action").trim().replace(/\s+/g, " ").slice(0, 28);
     const ctaBtn = doc.createElement("button");
-    ctaBtn.style.cssText = [
-      "all:initial",
-      "display:inline-flex",
-      "align-items:center",
-      "justify-content:center",
-      "gap:6px",
-      "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif",
-      "font-size:13px",
-      "font-weight:800",
-      `color:${c.bg}`,
-      "background:#ffffff",
-      "border:none",
-      "border-radius:10px",
-      "padding:9px 20px",
-      "min-height:40px",
-      "cursor:pointer",
-      "white-space:nowrap",
-      "box-shadow:0 2px 12px rgba(0,0,0,0.18)",
-      "flex-shrink:0",
-      "letter-spacing:0.01em",
-    ].join(";");
-    ctaBtn.innerHTML = `<span style="all:initial;display:inline;font-size:14px">↓</span><span style="all:initial;display:inline;font-family:inherit;font-size:13px;font-weight:800;color:${c.bg}"> ${rawText}</span>`;
+    applyInlineStylesFallback(ctaBtn, {
+      all: "initial",
+      display: "inline-flex",
+      "align-items": "center",
+      "justify-content": "center",
+      gap: "6px",
+      "font-family": "-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif",
+      "font-size": "13px",
+      "font-weight": "800",
+      color: c.bg,
+      background: "#ffffff",
+      border: "none",
+      "border-radius": "10px",
+      padding: "9px 20px",
+      "min-height": "40px",
+      cursor: "pointer",
+      "white-space": "nowrap",
+      "box-shadow": "0 2px 12px rgba(0,0,0,0.18)",
+      "flex-shrink": "0",
+      "letter-spacing": "0.01em",
+    });
+    const ctaArrow = doc.createElement("span");
+    applyInlineStylesFallback(ctaArrow, { all: "initial", display: "inline", "font-size": "14px" });
+    ctaArrow.textContent = "↓";
+    const ctaLabel = doc.createElement("span");
+    applyInlineStylesFallback(ctaLabel, { all: "initial", display: "inline", "font-family": "inherit", "font-size": "13px", "font-weight": "800", color: c.bg });
+    ctaLabel.textContent = ` ${rawText}`;
+    ctaBtn.append(ctaArrow, ctaLabel);
     ctaBtn.addEventListener("click", () => {
       ctaEl.scrollIntoView({ behavior: "smooth", block: "center" });
       setTimeout(() => { try { ctaEl.focus(); } catch { /* ignore */ } }, 380);
@@ -143,7 +260,23 @@ function buildActionBar(doc: Document, persona: PersonaId, ctaEl: HTMLElement | 
   }
 
   const closeBtn = doc.createElement("button");
-  closeBtn.style.cssText = "all:initial;display:flex;align-items:center;justify-content:center;width:30px;height:30px;background:rgba(255,255,255,0.16);border:none;border-radius:50%;cursor:pointer;color:#fff;font-size:17px;font-weight:700;flex-shrink:0;margin-left:2px";
+  applyInlineStylesFallback(closeBtn, {
+    all: "initial",
+    display: "flex",
+    "align-items": "center",
+    "justify-content": "center",
+    width: "30px",
+    height: "30px",
+    background: "rgba(255,255,255,0.16)",
+    border: "none",
+    "border-radius": "50%",
+    cursor: "pointer",
+    color: "#fff",
+    "font-size": "17px",
+    "font-weight": "700",
+    "flex-shrink": "0",
+    "margin-left": "2px",
+  });
   closeBtn.textContent = "×";
   closeBtn.title = "Dismiss";
   closeBtn.addEventListener("click", () => {
@@ -261,6 +394,15 @@ function applyDramaticOverrides(doc: Document, persona: PersonaId, ctaEl: HTMLEl
       set(btn, "letter-spacing", "0.01em");
     } else {
       const txt = buttonText(btn);
+
+      // Unlabeled icon-only controls (dropdown carets, menu toggles, close icons) have
+      // no text for us to reason about, and are almost always compact toolbar pieces
+      // whose surrounding row was sized around their original small footprint. Forcing
+      // them to a 44-48px+ pill breaks that row's layout on complex sites (this is what
+      // pushed GitHub's Watch/Fork/Star row into overlapping the sidebar) - safest to
+      // leave them exactly as the page designed them.
+      if (!txt) continue;
+
       const isClutter = CLUTTER_KEYWORDS.some((kw) => txt === kw || txt.startsWith(kw));
       const isDestructive = /delete|remove|cancel|close|reject|decline/.test(txt);
 
@@ -323,26 +465,40 @@ function applyDramaticOverrides(doc: Document, persona: PersonaId, ctaEl: HTMLEl
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 export function simplifyPage(doc: Document, persona: PersonaId): () => void {
-  // 1. Inject persona CSS (O(1)) — catches framework CSS variables
-  const css = getPersonaTransformCss(persona);
-  if (css) injectStylesSafely(doc, PERSONA_STYLE_ID, css);
-
-  // 2. Find primary CTA
+  const lightTouch = isComplexPageStructure(doc);
   const ctaEl = findPrimaryCta(doc);
 
-  // 3. Apply inline overrides on structural + all buttons (fast, bounded)
-  const reverts = applyDramaticOverrides(doc, persona, ctaEl);
+  let reverts: Revert[];
+  if (lightTouch) {
+    // Complex page (GitHub-style grid/flex toolbars) - skip background/button/card
+    // overrides entirely, since those are what break tightly-sized layout rows. Only
+    // text size, line-height, and a theme-aware text color are touched.
+    const dark = detectDarkBackground(doc);
+    injectStylesSafely(doc, LIGHT_TOUCH_STYLE_ID, buildLightTouchCss(dark));
+    reverts = [() => removeInjectedStyles(doc, LIGHT_TOUCH_STYLE_ID)];
+  } else {
+    // 1. Inject persona CSS (O(1)) — catches framework CSS variables
+    const css = getPersonaTransformCss(persona);
+    if (css) injectStylesSafely(doc, PERSONA_STYLE_ID, css);
 
-  // 4. Action bar
-  const bar = buildActionBar(doc, persona, ctaEl);
+    // 2. Apply inline overrides on structural + all buttons (fast, bounded)
+    reverts = applyDramaticOverrides(doc, persona, ctaEl);
+    reverts.push(() => removeInjectedStyles(doc, PERSONA_STYLE_ID));
+  }
+
+  // Action bar - self-contained new element, safe to show in either mode.
+  const bar = buildActionBar(doc, persona, ctaEl, lightTouch);
   const barH = bar.getBoundingClientRect().height || 62;
   const prevPT = doc.body.style.paddingTop;
   doc.body.style.setProperty("padding-top", `${barH + 8}px`, "important");
+  // Exposed so the assistant panel (.na-shell, in contentStyles.ts) can reserve the
+  // same space and avoid growing up underneath this fixed bar.
+  doc.documentElement.style.setProperty("--neuroadapt-topbar-h", `${barH + 8}px`);
 
   return () => {
-    removeInjectedStyles(doc, PERSONA_STYLE_ID);
     bar.remove();
     doc.body.style.paddingTop = prevPT;
+    doc.documentElement.style.removeProperty("--neuroadapt-topbar-h");
     for (const fn of reverts) fn();
   };
 }

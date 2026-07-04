@@ -1,4 +1,4 @@
-﻿import { AlertCircle, CheckCircle2, Circle, Compass, Loader2, MessageCircle, Send, Sparkles } from "lucide-react";
+﻿import { AlertCircle, CheckCircle2, Circle, Compass, Loader2, MessageCircle, Send, Sparkles, Youtube } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { sendRuntimeMessage } from "@/shared/chrome";
@@ -48,6 +48,15 @@ const FIRST_TIME_SUGGESTIONS = [
 
 function createId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+// No YouTube API key/quota needed - just a well-formed search query, opened in a new
+// tab. We can't know if a matching video actually exists without a real API call, so
+// this intentionally stays a search link rather than an embedded/auto-picked video.
+function buildTutorialSearchUrl(classification: PageClassification | null): string {
+  const subject = (classification?.hasSignificantForm && classification.primaryFormLabel) || document.title || "this page";
+  const query = `how to ${subject} tutorial`.replace(/\s+/g, " ").trim();
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
 }
 
 function TypingIndicator(): JSX.Element {
@@ -593,6 +602,15 @@ export function TaskAssistantPanel({ settings, persona, onStatus, onGoalChange, 
                 {suggestion}
               </button>
             ))}
+            <button
+              type="button"
+              className="na-suggestion-chip"
+              onClick={() => window.open(buildTutorialSearchUrl(classificationRef.current), "_blank", "noopener,noreferrer")}
+              aria-label="Search YouTube for a video tutorial about this page"
+            >
+              <Youtube size={12} style={{ marginRight: 4 }} />
+              Watch a tutorial
+            </button>
           </div>
         ) : null}
 
