@@ -140,6 +140,18 @@ function initNeuroAdapt() {
           tree = pruner.prune();
           const tPrune = performance.now() - t0;
 
+          // ── Early exit if page is empty ─────────────────────────────────────
+          // Skip ranking entirely — avoids calling ranker.rank() with an empty
+          // tree (which just warns and returns []) on blank/tracking frames.
+          if (tree.length === 0) {
+            highlighter.clear();
+            sendResponse({
+              ok: true, frame: window.location.href,
+              topRef: null, topScore: 0, confident: false, source: 'none',
+            });
+            return;
+          }
+
           // ── Stage 1: multi-hint expansion ──────────────────────────────
           // Rank against all hint phrasings (main + alternatives) and merge
           // by best score per element. This handles synonym/paraphrase misses
@@ -162,16 +174,6 @@ function initNeuroAdapt() {
             .slice(0, 30);
 
           const tRank = performance.now() - t0 - tPrune;
-
-          // ── Early exit if page is empty ─────────────────────────────────────
-          if (tree.length === 0) {
-            highlighter.clear();
-            sendResponse({
-              ok: true, frame: window.location.href,
-              topRef: null, topScore: 0, confident: false, source: 'none',
-            });
-            return;
-          }
 
           // ── Universal viewport supplement ───────────────────────────────────
           // ALWAYS include every in-viewport interactive element in the LLM pool,
