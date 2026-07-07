@@ -1,12 +1,12 @@
 /**
- * NeuroAdapt AI — Injected Page Styles
- * Minimal, non-obstructive. The highlight draws attention without covering content.
+ * NeuroAdapt AI — Injected Page Styles (Phase 4.1)
+ * More prominent highlight, dim overlay, and context ring.
  */
 
-/* ── Highlight glow — soft, not a hard ring ──────────────────────────────── */
+/* ── Primary highlight — bold, immediately visible ───────────────────────── */
 .na-highlight {
-  outline: 2px solid rgba(14, 165, 233, 0.9) !important;
-  outline-offset: 2px !important;
+  outline: 3px solid rgba(14, 165, 233, 1) !important;
+  outline-offset: 3px !important;
   border-radius: 4px !important;
   position: relative !important;
   z-index: 2147483640 !important;
@@ -14,42 +14,73 @@
 }
 
 @keyframes na-glow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.4) !important; }
-  50%       { box-shadow: 0 0 8px 3px rgba(14, 165, 233, 0.25) !important; }
+  0%, 100% {
+    box-shadow:
+      0 0 0   2px rgba(14, 165, 233, 0.35),
+      0 0 12px 0px rgba(14, 165, 233, 0.0) !important;
+  }
+  50% {
+    box-shadow:
+      0 0 0   4px rgba(14, 165, 233, 0.2),
+      0 0 16px 4px rgba(14, 165, 233, 0.3) !important;
+  }
 }
 .na-highlight--pulse {
-  animation: na-glow 2s ease-in-out infinite !important;
+  animation: na-glow 1.6s ease-in-out infinite !important;
 }
 
-/* ── Step badge — small pill anchored to top-right corner of element ──────── */
+/* ── Context container — subtle outline on the surrounding card/form ──────── */
+.na-highlight--context {
+  outline: 1px solid rgba(14, 165, 233, 0.28) !important;
+  outline-offset: 6px !important;
+  border-radius: 8px !important;
+  position: relative !important;
+  z-index: 2147483635 !important;
+}
+
+/* ── Page dim overlay — light background scrim ───────────────────────────── */
+#na-dim-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  background: rgba(0, 0, 0, 0.28) !important;
+  z-index: 2147483630 !important;
+  pointer-events: none !important;
+}
+
+/* ── Action badge — attached to highlighted element ──────────────────────── */
 #na-step-badge {
   position: absolute !important;
   z-index: 2147483647 !important;
   display: inline-flex !important;
   align-items: center !important;
-  gap: 5px !important;
   background: #0ea5e9 !important;
   color: #fff !important;
   font-family: system-ui, -apple-system, sans-serif !important;
-  font-size: 11px !important;
+  font-size: 12px !important;
   font-weight: 700 !important;
   line-height: 1 !important;
-  padding: 4px 9px !important;
+  padding: 6px 11px !important;
   border-radius: 20px !important;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
+  box-shadow: 0 3px 12px rgba(0,0,0,0.35) !important;
   pointer-events: none !important;
   white-space: nowrap !important;
-  max-width: 200px !important;
+  max-width: 240px !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
   opacity: 1 !important;
   transition: opacity 0.4s ease !important;
 }
+#na-step-badge::before {
+  content: '▶' !important;
+  margin-right: 6px !important;
+  font-size: 9px !important;
+  opacity: 0.85 !important;
+}
 #na-step-badge.na-badge--fading {
   opacity: 0 !important;
 }
 
-/* ── Human-in-the-loop cursor override ──────────────────────────────────── */
+/* ── HITL crosshair cursor ───────────────────────────────────────────────── */
 .na-hitl-cursor,
 .na-hitl-cursor * {
   cursor: crosshair !important;
