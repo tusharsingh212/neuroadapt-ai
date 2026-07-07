@@ -23,6 +23,10 @@
 
 console.log('[NeuroAdapt] Content script v3 loaded in frame:', window.location.href);
 
+// ── Internal benchmark metrics ─────────────────────────────────────────────
+// Each entry is one rank() call. Read from DevTools: window.__naMetrics
+window.__naMetrics = window.__naMetrics || [];
+
 if (window.__naInitialised) {
   console.log('[NeuroAdapt] Already initialised in this frame — skipping.');
 } else {
@@ -96,8 +100,33 @@ function initNeuroAdapt() {
           minScore      = 40,
           alternatives  = [],   // additional hint phrasings for multi-hint expansion
           elementType   = null, // expected HTML element type from step metadata
-          preferredZone = null, // expected page zone from step metadata
+          detectModal   = false, // if true, auto-override zone when a modal is open
         } = message;
+
+        // Modal/dialog detection: if an open dialog is present on the page,
+        // override preferredZone to 'modal' so the ranker weights modal elements
+        // higher. This prevents background-page elements from winning when the
+        // user needs to interact with a dialog.
+        let preferredZone = message.preferredZone ?? null;
+        if (detectModal && !preferredZone) {
+          const openModal = document.querySelector(
+            '[role="dialog"]:not([aria-hidden="true"]),' +
+            '[role="alertdialog"]:not([aria-hidden="true"])'
+          );
+          if (!openModal) {
+            // Class-based modal detection as fallback
+            const classModal = document.querySelector(
+              '.modal.show,.modal.active,.modal[open],' +
+              '.dialog.active,.drawer.active,.sheet.active'
+            );
+            if (classModal) preferredZone = 'modal';
+          } else {
+            preferredZone = 'modal';
+          }
+          if (preferredZone === 'modal') {
+            console.log('[NeuroAdapt] Modal detected — overriding preferredZone to modal.');
+          }
+        }
 
         if (!targetHint) {
           sendResponse({ ok: false, error: 'targetHint is required' });
@@ -281,8 +310,7 @@ function initNeuroAdapt() {
             // ── Stale ref fix ─────────────────────────────────────────────
             // The LLM call took 2–8s. The DOM may have changed.
             // Re-verify the element is still connected before highlighting.
-            // If detached, re-prune and match by (tag, label, type) identity
-            // rather than by index-based ref.
+            // If detached, re-prune and match by (tag, label, type) identity.
 
             const freshTree = pruner.prune();
             tree = freshTree;
@@ -293,7 +321,6 @@ function initNeuroAdapt() {
               const winCand = candidates.find((c) => c.node.ref === winRef);
               if (winCand) {
                 const { tag, label, type, id } = winCand.node;
-                // Try most-specific match first (id), then label+tag, then tag+type
                 winNode =
                   (id && freshTree.find((n) => n.id === id && n.tag === tag)) ||
                   (label && freshTree.find((n) => n.tag === tag && n.label === label && (type == null || n.type === type))) ||
@@ -304,10 +331,52 @@ function initNeuroAdapt() {
               }
             }
 
+            // ── Post-selection validation ──────────────────────────────────
+            // Verify the element is still visible and enabled. If it fails,
+            // attempt recovery: find the next valid candidate from the pool.
+            let validationStatus = validateElement(winNode?.element);
+
+            if (validationStatus !== 'ok') {
+              console.warn(
+                `[NeuroAdapt] Validation failed (${validationStatus}) for "${winLabel}" — ` +
+                'attempting recovery from candidate pool.'
+              );
+
+              // Recovery: walk down the candidate list and pick the first valid one
+              let recovered = false;
+              for (const cand of candidates.slice(1)) {
+                const freshNode = freshTree.find((n) => n.ref === cand.node.ref);
+                if (!freshNode) continue;
+                const vs = validateElement(freshNode.element);
+                if (vs === 'ok') {
+                  const prevStatus = validationStatus;
+                  winNode   = freshNode;
+                  winRef    = freshNode.ref;
+                  winLabel  = freshNode.label;
+                  winScore  = Math.max(0, cand.score - 10); // penalty for recovery
+                  validationStatus = 'ok';
+                  recovered = true;
+                  console.log(
+                    `[NeuroAdapt] Recovery: using "${winLabel}" <${winNode.tag}> ` +
+                    `score=${winScore} (recovered from ${prevStatus} winner)`
+                  );
+                  break;
+                }
+              }
+
+              if (!recovered) {
+                console.warn('[NeuroAdapt] Recovery failed — no valid candidate. Falling back to HITL.');
+                highlighter.clear();
+                sendResponse({
+                  ok: true, frame: window.location.href,
+                  topRef: null, topScore: 0, confident: false, source: 'validation-failed',
+                  validationStatus,
+                });
+                return;
+              }
+            }
+
             if (winNode?.element && document.contains(winNode.element)) {
-              // Use observer.pauseAround so the badge insertion doesn't
-              // trigger a spurious re-rank (belt-and-suspenders alongside the
-              // observer's own na-id filter).
               observer.pauseAround(() => {
                 highlighter.highlight(winNode.element, {
                   tooltip: tooltip ?? targetHint,
@@ -316,10 +385,6 @@ function initNeuroAdapt() {
                 });
               });
 
-              // ── Phase 5: click-detection ──────────────────────────────
-              // Attach a one-shot listener so that when the user clicks the
-              // highlighted element, the background advances to the next step
-              // automatically without requiring manual "Next step" button press.
               winNode.element.addEventListener('click', () => {
                 try {
                   chrome.runtime.sendMessage({ type: 'NA_ELEMENT_CLICKED' }).catch(() => {});
@@ -336,6 +401,24 @@ function initNeuroAdapt() {
             console.log(`[NeuroAdapt] Low confidence (${winScore}) — HITL fallback needed.`);
           }
 
+          const totalMs = (performance.now() - t0).toFixed(1);
+
+          // Record benchmark entry for this step
+          window.__naMetrics.push({
+            ts:             Date.now(),
+            hint:           targetHint,
+            prunedTotal:    tree.length,
+            candidateCount: candidates.length,
+            pruneMs:        +tPrune.toFixed(1),
+            rankMs:         +tRank.toFixed(1),
+            llmMs:          +tLlm.toFixed(1),
+            totalMs:        +totalMs,
+            topScore:       winScore,
+            topLabel:       winLabel,
+            source:         winSource,
+            confident,
+          });
+
           sendResponse({
             ok:       true,
             frame:    window.location.href,
@@ -347,6 +430,14 @@ function initNeuroAdapt() {
             ranked:   candidates.slice(0, 5).map(({ node: n, score: s, reasons: r }) =>
               ({ ref: n.ref, label: n.label, tag: n.tag, score: s, reasons: r })
             ),
+            metrics: {
+              prunedTotal:    tree.length,
+              candidateCount: candidates.length,
+              pruneMs:        tPrune.toFixed(1),
+              rankMs:         tRank.toFixed(1),
+              llmMs:          tLlm.toFixed(1),
+              totalMs,
+            },
           });
         })();
 
@@ -355,104 +446,64 @@ function initNeuroAdapt() {
 
       // ── Page context snapshot (for generateSteps) ───────────────────────
       // Returns actual UI element labels from the live page so the LLM can
-      // generate steps that reference exact button text / input placeholders
-      // instead of guessing from the URL alone.
+      // generate steps that reference exact button text / input placeholders.
+      // Uses the pruner tree (single querySelectorAll) instead of 5 separate
+      // DOM walks — eliminates duplicate label resolution logic.
       case 'NA_GET_PAGE_CONTEXT': {
+        const freshTree = pruner.prune();
+        tree = freshTree;
+
         const uniq = (arr) => [...new Set(arr.filter(Boolean))];
 
+        // Headings still need a separate query (not in the interactive tree)
         const headings = uniq(
           [...document.querySelectorAll('h1,h2,h3,[role="heading"]')]
             .map((el) => el.innerText?.trim().slice(0, 60))
         ).slice(0, 8);
 
+        // Buttons and links — from pruner tree (already resolved labels)
         const buttons = uniq(
-          [...document.querySelectorAll(
-            'button,[role="button"],input[type="submit"],input[type="button"],a[role="button"]'
-          )]
-            .filter((el) => {
-              try {
-                const s = window.getComputedStyle(el);
-                return s.display !== 'none' && s.visibility !== 'hidden';
-              } catch { return true; }
-            })
-            .map((el) =>
-              (el.innerText || el.value || el.getAttribute('aria-label') || '')
-                .trim().replace(/\s+/g, ' ').slice(0, 50)
+          freshTree
+            .filter((n) =>
+              n.role === 'button' || n.role === 'link' ||
+              n.tag === 'a' ||
+              (n.tag === 'input' && ['submit', 'button', 'image'].includes(n.type))
             )
-            .filter((t) => t.length > 0 && t.length < 50)
+            .map((n) => n.label)
+            .filter((t) => t && t.length > 0 && t.length < 50)
         ).slice(0, 25);
 
+        // Inputs — from pruner tree
+        const inputs = uniq(
+          freshTree
+            .filter((n) =>
+              ['textbox', 'searchbox', 'combobox', 'spinbutton', 'slider'].includes(n.role) ||
+              ['input', 'textarea', 'select'].includes(n.tag)
+            )
+            .map((n) => n.label)
+            .filter(Boolean)
+        ).slice(0, 15);
+
+        // Tabs / menu items — from pruner tree
+        const tabs = uniq(
+          freshTree
+            .filter((n) => ['tab', 'menuitem', 'menuitemcheckbox', 'menuitemradio'].includes(n.role))
+            .map((n) => n.label)
+            .filter((t) => t && t.length > 0 && t.length < 50)
+        ).slice(0, 10);
+
+        // Links with text — still a separate query to catch non-interactive <a> tags
         const links = uniq(
           [...document.querySelectorAll('a[href]')]
             .filter((el) => {
               try {
                 const s = window.getComputedStyle(el);
-                return s.display !== 'none' && (el.innerText?.trim().length > 0);
+                return s.display !== 'none' && el.innerText?.trim().length > 0;
               } catch { return true; }
             })
             .map((el) => el.innerText.trim().replace(/\s+/g, ' ').slice(0, 50))
             .filter((t) => t.length > 1 && t.length < 50)
         ).slice(0, 20);
-
-        const inputs = uniq(
-          [...document.querySelectorAll(
-            'input:not([type="hidden"]),textarea,select,[contenteditable="true"]'
-          )]
-            .filter((el) => {
-              try {
-                const s = window.getComputedStyle(el);
-                return s.display !== 'none' && s.visibility !== 'hidden';
-              } catch { return true; }
-            })
-            .map((el) => {
-              // 1. aria-label (most explicit)
-              const aria = el.getAttribute('aria-label')?.trim();
-              if (aria) return aria;
-              // 2. placeholder or data-placeholder (Draft.js / Quill contenteditable)
-              const ph = el.getAttribute('placeholder')?.trim()
-                      || el.getAttribute('data-placeholder')?.trim();
-              if (ph) return ph;
-              // 3. associated <label for="id"> — most common pattern on form-heavy sites
-              if (el.id) {
-                try {
-                  const assoc = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
-                  const t = assoc?.textContent?.trim().replace(/\s+/g, ' ');
-                  if (t && t.length < 60) return t;
-                } catch (_) { /* CSS.escape not available */ }
-              }
-              // 4. wrapping <label>
-              const wrap = el.closest('label');
-              if (wrap) {
-                const clone = wrap.cloneNode(true);
-                clone.querySelectorAll('input,select,textarea').forEach((n) => n.remove());
-                const t = clone.textContent?.trim().replace(/\s+/g, ' ');
-                if (t && t.length < 60) return t;
-              }
-              // 5. adjacent preceding <label> sibling
-              const prev = el.previousElementSibling;
-              if (prev?.tagName === 'LABEL') {
-                const t = prev.textContent?.trim();
-                if (t && t.length < 60) return t;
-              }
-              // 6. name attribute
-              return el.getAttribute('name')?.replace(/[-_]/g, ' ').trim() || '';
-            })
-            .filter(Boolean)
-        ).slice(0, 15);
-
-        // Tab labels — important for SPA tab-navigation (account tabs, dashboard tabs, etc.)
-        const tabs = uniq(
-          [...document.querySelectorAll('[role="tab"],[role="menuitem"]')]
-            .filter((el) => {
-              try {
-                const s = window.getComputedStyle(el);
-                return s.display !== 'none' && s.visibility !== 'hidden';
-              } catch { return true; }
-            })
-            .map((el) => (el.innerText || el.getAttribute('aria-label') || '')
-              .trim().replace(/\s+/g, ' ').slice(0, 50))
-            .filter((t) => t.length > 0 && t.length < 50)
-        ).slice(0, 10);
 
         sendResponse({
           ok: true,
@@ -488,6 +539,27 @@ function initNeuroAdapt() {
   });
 
   console.log('[NeuroAdapt] Engine v3 initialised. Tree size:', tree.length);
+}
+
+// ── Post-selection validation ─────────────────────────────────────────────────
+
+/**
+ * Verify the selected element is still actionable before highlighting it.
+ * Returns one of: 'ok' | 'disabled' | 'hidden' | 'detached'
+ */
+function validateElement(el) {
+  if (!el || !document.contains(el)) return 'detached';
+  try {
+    const style = window.getComputedStyle(el);
+    if (style.display    === 'none')           return 'hidden';
+    if (style.visibility === 'hidden')         return 'hidden';
+    if (parseFloat(style.opacity) === 0)       return 'hidden';
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) return 'hidden';
+    if (el.disabled)                           return 'disabled';
+    if (el.getAttribute('aria-disabled') === 'true') return 'disabled';
+  } catch { return 'detached'; }
+  return 'ok';
 }
 
 // ── HITL click capture ────────────────────────────────────────────────────────

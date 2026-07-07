@@ -364,6 +364,24 @@ window.NeuroAdaptEngine = window.NeuroAdaptEngine || {};
     return Object.keys(result).length ? result : null;
   }
 
+  // ── DOM depth ─────────────────────────────────────────────────────────────
+
+  /**
+   * Distance (in ancestor hops) from the element to document.body.
+   * Shallow elements (depth < 6) tend to be primary CTAs; deeply nested
+   * elements tend to be icon buttons, table cells, or nested list items.
+   * Capped at 20 to avoid O(n) cost on very deep trees.
+   */
+  function resolveDepth(el) {
+    let depth = 0;
+    let node  = el.parentElement;
+    while (node && node !== document.body && depth < 20) {
+      depth++;
+      node = node.parentElement;
+    }
+    return depth;
+  }
+
   // ── Semantic role helper ──────────────────────────────────────────────────
 
   function _semanticRole(tag, type) {
@@ -408,9 +426,10 @@ window.NeuroAdaptEngine = window.NeuroAdaptEngine || {};
       href:          el.getAttribute('href')        || null,
       value:         el.value != null ? String(el.value) : null,
       parentHeading: resolveParentHeading(el),
-      htmlSnippet:   extractHtmlSnippet(el),        // NEW: compact sanitised HTML
-      zone:          resolveZone(el),               // NEW: header|footer|main|nav|sidebar|modal|content
-      dataAttrs:     extractDataAttrs(el),          // NEW: data-testid, data-cy, data-qa, etc.
+      htmlSnippet:   extractHtmlSnippet(el),
+      zone:          resolveZone(el),
+      dataAttrs:     extractDataAttrs(el),
+      depth:         resolveDepth(el),
       rect: {
         top:    Math.round(rect.top),
         left:   Math.round(rect.left),

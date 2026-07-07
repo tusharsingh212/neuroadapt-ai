@@ -53,18 +53,24 @@ function renderState(state) {
   }
 }
 
+// ── Local state mirror (avoids extra NA_GET_STATE round-trips) ────────────
+let _localState = { status: 'idle' };
+
 // ── On popup open: sync current state from background ─────────────────────
 chrome.runtime.sendMessage({ type: 'NA_GET_STATE' }, (resp) => {
   if (chrome.runtime.lastError) {
     console.warn('[NeuroAdapt] NA_GET_STATE error:', chrome.runtime.lastError.message);
     return;
   }
-  if (resp?.ok) renderState(resp.state);
+  if (resp?.ok) { _localState = resp.state; renderState(resp.state); }
 });
 
 // ── Listen for live state updates ─────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message) => {
-  if (message.type === 'NA_STATE_UPDATE') renderState(message.state);
+  if (message.type === 'NA_STATE_UPDATE') {
+    _localState = message.state;
+    renderState(message.state);
+  }
 });
 
 // ── Start / Next button ───────────────────────────────────────────────────
@@ -74,9 +80,8 @@ startBtn.addEventListener('click', async () => {
 
   const goal = goalInput.value.trim();
 
-  // If we're mid-navigation, this button becomes "Next Step"
-  const resp = await chrome.runtime.sendMessage({ type: 'NA_GET_STATE' });
-  if (resp?.state?.status === 'navigating') {
+  // Use in-memory state — no extra round-trip needed
+  if (_localState.status === 'navigating') {
     chrome.runtime.sendMessage({ type: 'NA_NEXT_STEP' });
     return;
   }

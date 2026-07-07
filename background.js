@@ -27,7 +27,7 @@
  *  - Debug logging: set self.__naDebug = true in SW console to enable.
  */
 
-import { getStepExplanation, identifyElement, generateSteps, validateSelection, testApiKey } from './engine/llm.js';
+import { getStepExplanation, identifyElement, generateSteps, validateSelection, testApiKey, isSimpleStepExplanation } from './engine/llm.js';
 import { GEMINI_API_KEY } from './config.js';
 
 console.log('[NeuroAdapt] Background service worker v3 started.');
@@ -351,8 +351,19 @@ async function rankAcrossFrames(tabId, targetHint, tooltip, stepMeta = null) {
 
   if (!frames?.length) return { ok: false, topRef: null, topScore: 0, frameId: 0 };
 
+  // Filter frames that cannot host interactive content.
+  // about:blank, data: URIs, chrome-extension:// frames, and frames with no
+  // URL are guaranteed to be empty or tracking pixels — skip them to avoid
+  // wasted message-bus round-trips and noisy null responses.
+  const SKIP_PREFIXES = ['about:', 'data:', 'chrome:', 'chrome-extension:', 'javascript:'];
+  const activeFrames = frames.filter((f) => {
+    const url = f.url ?? '';
+    return url === '' || url === '(unknown)' ||
+           !SKIP_PREFIXES.some((p) => url.startsWith(p));
+  });
+
   console.log(
-    `[NeuroAdapt] Fanning out NA_RANK to ${frames.length} frame(s) for "${targetHint}"`
+    `[NeuroAdapt] Fanning out NA_RANK to ${activeFrames.length}/${frames.length} frame(s) for "${targetHint}"`
   );
 
   const buildFanOut = (frameList) => frameList.map((frame) =>
@@ -366,6 +377,7 @@ async function rankAcrossFrames(tabId, targetHint, tooltip, stepMeta = null) {
         alternatives:  stepMeta?.alternatives  ?? [],
         elementType:   stepMeta?.elementType   ?? null,
         preferredZone: stepMeta?.zone          ?? null,
+        detectModal:   true,  // content script will override zone to 'modal' if one is open
       },
       { frameId: frame.frameId }
     )
@@ -376,7 +388,7 @@ async function rankAcrossFrames(tabId, targetHint, tooltip, stepMeta = null) {
     })
   );
 
-  let settled   = await Promise.allSettled(buildFanOut(frames));
+  let settled   = await Promise.allSettled(buildFanOut(activeFrames));
   let responses = settled
     .filter((r) => r.status === 'fulfilled' && r.value?.ok)
     .map((r) => r.value);
@@ -391,9 +403,8 @@ async function rankAcrossFrames(tabId, targetHint, tooltip, stepMeta = null) {
     );
     const injected = await injectContentScripts(tabId);
     if (injected) {
-      // Small delay to let the injected scripts initialise
       await new Promise((r) => setTimeout(r, 600));
-      settled   = await Promise.allSettled(buildFanOut([{ frameId: 0 }]));
+      settled   = await Promise.allSettled(buildFanOut([{ frameId: 0, url: '' }]));
       responses = settled
         .filter((r) => r.status === 'fulfilled' && r.value?.ok)
         .map((r) => r.value);
@@ -415,8 +426,16 @@ async function rankAcrossFrames(tabId, targetHint, tooltip, stepMeta = null) {
 
   console.log(
     `[NeuroAdapt] Best: frame[${best.frameId}] score=${best.topScore} ` +
-    `label="${best.topLabel ?? '—'}"`
+    `label="${best.topLabel ?? '—'}" source=${best.source ?? 'n/a'}`
   );
+  if (best.metrics) {
+    console.log(
+      `[NeuroAdapt] Metrics: pruned=${best.metrics.prunedTotal} ` +
+      `candidates=${best.metrics.candidateCount} ` +
+      `prune=${best.metrics.pruneMs}ms rank=${best.metrics.rankMs}ms ` +
+      `llm=${best.metrics.llmMs}ms total=${best.metrics.totalMs}ms`
+    );
+  }
   dbg('RANK_RESULT', {
     respondedFrames: responses.length,
     totalFrames:     frames.length,
@@ -426,6 +445,7 @@ async function rankAcrossFrames(tabId, targetHint, tooltip, stepMeta = null) {
     source:          best.source,
     frameId:         best.frameId,
     ranked:          best.ranked,
+    metrics:         best.metrics,
   });
 
   return best;
@@ -487,10 +507,18 @@ async function executeCurrentStep() {
 
     dbg('STEP_TIMING', { elapsedMs: (performance.now() - t0).toFixed(1), step });
 
-    // Fire LLM explanation non-blocking
-    getStepExplanation(getApiKey(), userGoal, step)
-      .then((explanation) => transition('SET_EXPLANATION', { explanation }))
-      .catch(() => {});
+    // Fire LLM explanation non-blocking.
+    // Skip the Gemini call for short/simple steps — rule-based text is just
+    // as informative and avoids burning quota on "Click Sign In" steps.
+    if (isSimpleStepExplanation(step)) {
+      getStepExplanation('', userGoal, step)   // empty key → returns ruleFallback instantly
+        .then((explanation) => transition('SET_EXPLANATION', { explanation }))
+        .catch(() => {});
+    } else {
+      getStepExplanation(getApiKey(), userGoal, step)
+        .then((explanation) => transition('SET_EXPLANATION', { explanation }))
+        .catch(() => {});
+    }
 
     if (result.topScore >= MIN_CONFIDENCE) {
       transition('STEP_FOUND', {
@@ -500,13 +528,33 @@ async function executeCurrentStep() {
         frameId:  result.frameId,
       });
     } else {
-      const score  = result.topScore;
-      const best   = result.topLabel ? `Best guess: "${result.topLabel}" (${score}/100).` : '';
-      const prompt =
-        `I can't confidently find "${step}" on this page. ${best} ` +
-        `Please click it for me and I'll continue from there.`;
+      const score    = result.topScore;
+      const source   = result.source ?? 'unknown';
+      const best     = result.topLabel ? `Best guess: "${result.topLabel}" (${score}/100).` : '';
 
-      console.log(`[NeuroAdapt] Low confidence (${score}/100) — triggering HITL.`);
+      // Produce a specific HITL message based on why confidence is low.
+      let prompt;
+      if (source === 'validation-failed') {
+        const vs = result.validationStatus;
+        if (vs === 'disabled') {
+          prompt = `The "${step}" element is currently disabled. It may become available ` +
+                   `after you complete a previous field. Please click it when it's enabled.`;
+        } else if (vs === 'hidden') {
+          prompt = `The "${step}" element is not visible right now. ` +
+                   `It may be in a section you need to expand or scroll to. Please click it.`;
+        } else {
+          prompt = `The "${step}" element disappeared from the page. Please click the ` +
+                   `equivalent element and I'll continue.`;
+        }
+      } else if (score === 0) {
+        prompt = `I couldn't find any element matching "${step}" on this page. ` +
+                 `Please click the correct element manually.`;
+      } else {
+        prompt = `I can't confidently find "${step}" on this page. ${best} ` +
+                 `Please click it for me and I'll continue from there.`;
+      }
+
+      console.log(`[NeuroAdapt] Low confidence (${score}/100, source=${source}) — triggering HITL.`);
       transition('REQUIRE_HITL', { prompt });
       attachHITLCapture(tabId, step);
     }

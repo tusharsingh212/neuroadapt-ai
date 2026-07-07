@@ -120,8 +120,7 @@ window.NeuroAdaptEngine = window.NeuroAdaptEngine || {};
   const TYPE_MAP = {
     button:   (n) => n.tag === 'button' || n.role === 'button' ||
                      (n.tag === 'input' && ['submit','button','reset','image'].includes(n.type)),
-    submit:   (n) => n.tag === 'button' || (n.tag === 'input' && n.type === 'submit') ||
-                     n.element?.getAttribute?.('type') === 'submit',
+    submit:   (n) => n.tag === 'button' || n.type === 'submit',
     link:     (n) => n.tag === 'a',
     anchor:   (n) => n.tag === 'a',
     input:    (n) => ['input','textarea'].includes(n.tag) || n.role === 'textbox',
@@ -172,22 +171,25 @@ window.NeuroAdaptEngine = window.NeuroAdaptEngine || {};
   // ══════════════════════════════════════════════════════════════════════════
 
   const WEIGHTS = {
-    labelExact:       50,
-    labelStrong:      42,   // similarity >= 0.8
-    labelPartialMax:  35,   // scaled by similarity ratio
-    ariaBonus:         8,
-    tagMatch:         20,
-    tagPenalty:      -10,
-    tagNoConstraint:   3,
-    metaTypeBonus:     8,   // elementType from stepMeta when hint has no type constraint
-    contextMax:       15,
-    viewportIn:       10,
-    viewportNear:      4,
-    attrMatch:         5,
-    prominenceHigh:    5,
-    prominenceMid:     2,
-    duplicatePenalty: -8,
-    zoneMatch:         8,
+    labelExact:         50,
+    labelStrong:        42,   // similarity >= 0.8
+    labelPartialMax:    35,   // scaled by similarity ratio
+    ariaBonus:           8,
+    tagMatch:           20,
+    tagPenalty:        -10,
+    tagNoConstraint:     3,
+    metaTypeBonus:       8,   // elementType from stepMeta when hint has no type constraint
+    contextMax:         15,
+    viewportIn:         10,
+    viewportNear:        4,
+    attrMatch:           5,
+    prominenceHigh:      5,
+    prominenceMid:       2,
+    duplicatePenalty:   -8,
+    zoneMatch:           8,
+    headingRelevance:    6,   // parentHeading text contains hint tokens
+    requiredField:       5,   // input has required attribute (must-fill fields)
+    shallowDepth:        3,   // element is close to body (< 6 hops = primary CTA zone)
   };
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -388,13 +390,17 @@ window.NeuroAdaptEngine = window.NeuroAdaptEngine || {};
         ctxPts += 5;
         reasons.push('in form +5');
       }
-      if (el.type === 'submit' || el.getAttribute?.('type') === 'submit') {
+      if (node.type === 'submit') {
         ctxPts += 6;
         reasons.push('type=submit +6');
       }
       if (el.hasAttribute?.('autofocus')) {
         ctxPts += 5;
         reasons.push('autofocus +5');
+      }
+      if (el.hasAttribute?.('required')) {
+        ctxPts += WEIGHTS.requiredField;
+        reasons.push(`required field +${WEIGHTS.requiredField}`);
       }
       if (meta.isUniqueTag) {
         ctxPts += 4;
@@ -442,6 +448,29 @@ window.NeuroAdaptEngine = window.NeuroAdaptEngine || {};
     if (meta.preferredZone && node.zone && node.zone === meta.preferredZone) {
       score += WEIGHTS.zoneMatch;
       reasons.push(`zone match "${node.zone}" +${WEIGHTS.zoneMatch}`);
+    }
+
+    // ── 10. HEADING RELEVANCE (0–6) ────────────────────────────────────────
+    // When the element's parent section/heading text contains the same tokens
+    // as the hint, the element is almost certainly in the right region.
+    if (node.parentHeading && contentTokens.length > 0) {
+      const headingNorm = _norm(node.parentHeading);
+      const headingHit  = contentTokens.some((t) =>
+        getSynonymPhrases(t).some((p) => headingNorm.includes(p))
+      );
+      if (headingHit) {
+        score += WEIGHTS.headingRelevance;
+        reasons.push(`heading relevance "${node.parentHeading.slice(0, 30)}" +${WEIGHTS.headingRelevance}`);
+      }
+    }
+
+    // ── 11. SHALLOW DEPTH BONUS (0–3) ──────────────────────────────────────
+    // Elements close to the document body (< 6 ancestor hops) are typically
+    // primary CTAs, top-level navigation items, or main form fields — not
+    // deeply nested icon buttons or table cell controls.
+    if (typeof node.depth === 'number' && node.depth < 6 && score > 0) {
+      score += WEIGHTS.shallowDepth;
+      reasons.push(`shallow element (depth ${node.depth}) +${WEIGHTS.shallowDepth}`);
     }
 
     return { score: Math.min(100, Math.max(0, score)), reasons };
