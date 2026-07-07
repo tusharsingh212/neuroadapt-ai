@@ -364,6 +364,74 @@ window.NeuroAdaptEngine = window.NeuroAdaptEngine || {};
     return Object.keys(result).length ? result : null;
   }
 
+  // ── Form context ─────────────────────────────────────────────────────────
+
+  /**
+   * Return the id/name of the enclosing form so the ranker and LLM can
+   * distinguish two identical "Submit" buttons in different forms.
+   * Also returns the form's aria-label or legend if present.
+   */
+  function resolveFormContext(el) {
+    const form = el.closest('form,[role="form"]');
+    if (!form) return { formId: null, formName: null };
+    return {
+      formId:   form.id   || null,
+      formName: (
+        form.getAttribute('aria-label') ||
+        form.querySelector(':scope > legend')?.textContent?.trim() ||
+        form.getAttribute('name') ||
+        null
+      ),
+    };
+  }
+
+  // ── Sibling buttons ───────────────────────────────────────────────────────
+
+  /**
+   * Return labels of up to 4 sibling interactive elements in the same parent.
+   * Helps distinguish elements that share a label (e.g. two "Submit" buttons
+   * in adjacent forms, or "Edit" buttons in a table row).
+   * Capped at 4 to keep serialized size small.
+   */
+  function resolveSiblingButtons(el) {
+    const parent = el.parentElement;
+    if (!parent) return null;
+    const siblings = [...parent.querySelectorAll(
+      'button:not([disabled]),[role="button"],' +
+      'input[type="submit"],input[type="button"],a[href]'
+    )]
+      .filter((s) => s !== el)
+      .map((s) => {
+        const t =
+          s.getAttribute('aria-label')?.trim() ||
+          s.innerText?.trim().slice(0, 40) ||
+          s.getAttribute('value')?.trim() ||
+          s.getAttribute('title')?.trim() || '';
+        return t || null;
+      })
+      .filter(Boolean)
+      .slice(0, 4);
+    return siblings.length ? siblings : null;
+  }
+
+  // ── ARIA described-by ─────────────────────────────────────────────────────
+
+  /**
+   * Resolve aria-describedby to readable text.
+   * Provides the LLM with the helper/hint text shown under a field
+   * (e.g. "Password must be at least 8 characters").
+   */
+  function resolveAriaDescribedBy(el) {
+    const ids = el.getAttribute('aria-describedby');
+    if (!ids) return null;
+    const text = ids
+      .split(/\s+/)
+      .map((id) => document.getElementById(id)?.textContent?.trim())
+      .filter(Boolean)
+      .join(' ');
+    return text.slice(0, 100) || null;
+  }
+
   // ── DOM depth ─────────────────────────────────────────────────────────────
 
   /**
@@ -425,11 +493,14 @@ window.NeuroAdaptEngine = window.NeuroAdaptEngine || {};
       placeholder:   el.getAttribute('placeholder')|| null,
       href:          el.getAttribute('href')        || null,
       value:         el.value != null ? String(el.value) : null,
-      parentHeading: resolveParentHeading(el),
-      htmlSnippet:   extractHtmlSnippet(el),
-      zone:          resolveZone(el),
-      dataAttrs:     extractDataAttrs(el),
-      depth:         resolveDepth(el),
+      parentHeading:    resolveParentHeading(el),
+      htmlSnippet:      extractHtmlSnippet(el),
+      zone:             resolveZone(el),
+      dataAttrs:        extractDataAttrs(el),
+      depth:            resolveDepth(el),
+      ...resolveFormContext(el),       // formId, formName
+      siblingButtons:   resolveSiblingButtons(el),
+      ariaDescribedBy:  resolveAriaDescribedBy(el),
       rect: {
         top:    Math.round(rect.top),
         left:   Math.round(rect.left),

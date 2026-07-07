@@ -223,22 +223,27 @@ function initNeuroAdapt() {
           // LLM can reason about actual HTML markup rather than fragmented
           // key-value pairs.
           const serialised = candidates.map(({ node, score }) => ({
-            ref:           node.ref,
-            tag:           node.tag,
-            type:          node.type,
-            role:          node.role,
-            label:         node.label,
-            ariaLabel:     node.ariaLabel,
-            placeholder:   node.placeholder,
-            name:          node.name,
-            id:            node.id,
-            href:          node.href,
-            parentHeading: node.parentHeading,
-            htmlSnippet:   node.htmlSnippet   ?? null,  // NEW: compact HTML for LLM
-            zone:          node.zone          ?? null,  // NEW: page zone
-            dataAttrs:     node.dataAttrs     ?? null,  // NEW: data-testid, data-cy, etc.
-            rect:          node.rect,
-            inViewport:    node.inViewport,
+            ref:              node.ref,
+            tag:              node.tag,
+            type:             node.type,
+            role:             node.role,
+            label:            node.label,
+            ariaLabel:        node.ariaLabel,
+            placeholder:      node.placeholder,
+            name:             node.name,
+            id:               node.id,
+            href:             node.href,
+            parentHeading:    node.parentHeading,
+            htmlSnippet:      node.htmlSnippet      ?? null,
+            zone:             node.zone             ?? null,
+            dataAttrs:        node.dataAttrs        ?? null,
+            formId:           node.formId           ?? null,   // Phase 3
+            formName:         node.formName         ?? null,   // Phase 3
+            siblingButtons:   node.siblingButtons   ?? null,   // Phase 3
+            ariaDescribedBy:  node.ariaDescribedBy  ?? null,   // Phase 3
+            depth:            node.depth            ?? null,
+            rect:             node.rect,
+            inViewport:       node.inViewport,
             score,
           }));
 
@@ -385,9 +390,17 @@ function initNeuroAdapt() {
                 });
               });
 
+              // Snapshot taken AFTER highlighting but BEFORE the click, so the
+              // Verification Engine has a stable pre-click baseline to compare.
+              const preSnapshot = takeSnapshot();
+
               winNode.element.addEventListener('click', () => {
                 try {
-                  chrome.runtime.sendMessage({ type: 'NA_ELEMENT_CLICKED' }).catch(() => {});
+                  chrome.runtime.sendMessage({
+                    type:        'NA_ELEMENT_CLICKED',
+                    preSnapshot, // Verification Engine needs this
+                    stepMeta:    { elementType, zone: preferredZone, targetLabel: targetHint },
+                  }).catch(() => {});
                 } catch (_) { /* extension context invalidated */ }
               }, { once: true, passive: true });
 
@@ -525,6 +538,24 @@ function initNeuroAdapt() {
         sendResponse({ ok: true });
         break;
 
+      // ── Verification Engine: check expected outcomes after click ─────────
+      // Background calls this after NA_ELEMENT_CLICKED. We watch for
+      // observable page changes (URL, heading, dialog, success message, DOM
+      // count shift) and report back whether the step succeeded.
+      case 'NA_VERIFY_STEP': {
+        const { preSnapshot, stepMeta } = message;
+        verifyStepOutcome(preSnapshot, stepMeta)
+          .then((result) => {
+            console.log(
+              `[NeuroAdapt] Verification: ${result.verified ? '✓' : '✗'} ` +
+              `signals=[${result.signals.join(',')}]${result.timeout ? ' (timeout)' : ''}`
+            );
+            sendResponse(result);
+          })
+          .catch(() => sendResponse({ verified: false, signals: ['verify-error'], timeout: true }));
+        return true; // async
+      }
+
       // ── HITL: one-time click capture ────────────────────────────────────
       case 'NA_CAPTURE_CLICK': {
         attachClickCapture(sendResponse);
@@ -539,6 +570,128 @@ function initNeuroAdapt() {
   });
 
   console.log('[NeuroAdapt] Engine v3 initialised. Tree size:', tree.length);
+}
+
+// ── Page snapshot (pre-click baseline for verification) ───────────────────────
+
+/**
+ * Capture a lightweight snapshot of the page's current state.
+ * Taken immediately after highlighting — before the user clicks — so the
+ * Verification Engine has a before/after comparison reference.
+ */
+function takeSnapshot() {
+  const h1 = document.querySelector('h1,h2,[role="heading"]');
+  return {
+    url:         window.location.href,
+    title:       document.title,
+    heading:     h1?.innerText?.trim().slice(0, 80) ?? null,
+    dialogOpen:  !!document.querySelector(
+      '[role="dialog"]:not([aria-hidden="true"]),' +
+      '[role="alertdialog"]:not([aria-hidden="true"])'
+    ),
+    elementCount: document.querySelectorAll('button,input,a[href]').length,
+    ts:           Date.now(),
+  };
+}
+
+// ── Step outcome verification ─────────────────────────────────────────────────
+
+/**
+ * Poll for observable page changes for up to MAX_WAIT_MS.
+ * Returns on the first positive signal to minimise latency on fast SPAs.
+ * On timeout returns whatever was last observed (verified=false if nothing changed).
+ */
+async function verifyStepOutcome(preSnapshot, stepMeta) {
+  const MAX_WAIT_MS  = 3500;
+  const POLL_MS      = 350;
+  const t0           = performance.now();
+  const seen         = new Set();
+
+  // Fast path after 200 ms (URL changes, instant dialogs)
+  await new Promise((r) => setTimeout(r, 200));
+  detectVerificationSignals(preSnapshot, stepMeta).forEach((s) => seen.add(s));
+  if (seen.size > 0 && !seen.has('error-detected')) {
+    return { verified: true, signals: [...seen] };
+  }
+
+  while (performance.now() - t0 < MAX_WAIT_MS) {
+    await new Promise((r) => setTimeout(r, POLL_MS));
+    detectVerificationSignals(preSnapshot, stepMeta).forEach((s) => seen.add(s));
+
+    if (seen.has('error-detected'))   return { verified: false,  signals: [...seen] };
+    if (seen.size > 0)                return { verified: true,   signals: [...seen] };
+  }
+
+  return { verified: false, signals: [...seen], timeout: true };
+}
+
+/**
+ * Examine the current DOM and return an array of verification signal strings.
+ * Empty array means no observable change has occurred yet.
+ */
+function detectVerificationSignals(preSnapshot, stepMeta) {
+  const signals = [];
+
+  // 1. URL changed — most reliable signal for navigation steps
+  if (preSnapshot?.url && window.location.href !== preSnapshot.url) {
+    signals.push('url-changed');
+  }
+
+  // 2. Page title changed
+  if (preSnapshot?.title && document.title !== preSnapshot.title) {
+    signals.push('title-changed');
+  }
+
+  // 3. Primary heading changed — indicates new page section / route
+  const heading = document.querySelector('h1,h2,[role="heading"]')?.innerText?.trim().slice(0, 80) ?? null;
+  if (preSnapshot?.heading && heading && heading !== preSnapshot.heading) {
+    signals.push('heading-changed');
+  }
+
+  // 4. Dialog/modal appeared (e.g. after "Confirm" click)
+  const dialogNow = !!document.querySelector(
+    '[role="dialog"]:not([aria-hidden="true"]),' +
+    '[role="alertdialog"]:not([aria-hidden="true"])'
+  );
+  if (!preSnapshot?.dialogOpen && dialogNow) {
+    signals.push('dialog-opened');
+  }
+
+  // 5. Success / confirmation message appeared
+  const alertEl = document.querySelector(
+    '[role="alert"],[role="status"],' +
+    '.success,.alert-success,.toast-success,.notification-success,' +
+    '.flash-success,.MuiAlert-standardSuccess,.chakra-alert'
+  );
+  if (alertEl) {
+    const txt = (alertEl.innerText || alertEl.textContent || '').toLowerCase();
+    if (/success|done|complet|confirm|verif|sent|saved|register|welcome|submitt/.test(txt)) {
+      signals.push('success-message');
+    }
+  }
+
+  // 6. Form error appeared — means the click was a failed submission
+  // (still a change, but marks the step as failed, not succeeded)
+  const errorEl = document.querySelector(
+    '.error,.alert-danger,.alert-error,.field-error,' +
+    '[aria-invalid="true"],.MuiFormHelperText-root.Mui-error'
+  );
+  if (errorEl) {
+    const txt = (errorEl.innerText || errorEl.textContent || '').toLowerCase();
+    if (/error|invalid|fail|incorrect|wrong|required|please/.test(txt)) {
+      signals.push('error-detected');
+    }
+  }
+
+  // 7. Significant DOM change — new section loaded, form replaced, etc.
+  if (preSnapshot?.elementCount != null) {
+    const now = document.querySelectorAll('button,input,a[href]').length;
+    if (Math.abs(now - preSnapshot.elementCount) > 6) {
+      signals.push('dom-changed');
+    }
+  }
+
+  return signals;
 }
 
 // ── Post-selection validation ─────────────────────────────────────────────────

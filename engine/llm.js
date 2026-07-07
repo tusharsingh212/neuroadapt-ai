@@ -191,21 +191,24 @@ export async function identifyElement(apiKey, hint, candidates, { pageUrl = '', 
   // This gives Gemini actual HTML markup to reason about instead of fragmented
   // key-value pairs, dramatically improving selection accuracy.
   const elementList = candidates.map((el) => {
-    // score > 0: keyword-ranked; score === 0: visible but unranked (viewport supplement)
-    const score  = el.score > 0 ? ` [score:${el.score}]` : ' [visible]';
-    const fold   = el.inViewport === false ? ' [below-fold]' : '';
-    const zone   = el.zone ? ` [zone:${el.zone}]` : '';
-    const sec    = el.parentHeading ? ` [section:"${el.parentHeading}"]` : '';
+    const score    = el.score > 0 ? ` [score:${el.score}]` : ' [visible]';
+    const fold     = el.inViewport === false ? ' [below-fold]' : '';
+    const zone     = el.zone ? ` [zone:${el.zone}]` : '';
+    const sec      = el.parentHeading ? ` [section:"${el.parentHeading}"]` : '';
+    // Phase 3 rich context: form, siblings, description
+    const form     = el.formName ? ` [form:"${el.formName}"]` : (el.formId ? ` [form-id:"${el.formId}"]` : '');
+    const sibs     = el.siblingButtons?.length ? ` [siblings:${el.siblingButtons.slice(0, 2).map((s) => `"${s}"`).join('|')}]` : '';
+    const desc     = el.ariaDescribedBy ? ` [desc:"${el.ariaDescribedBy.slice(0, 50)}"]` : '';
 
     if (el.htmlSnippet) {
       let dataStr = '';
       if (el.dataAttrs) {
         dataStr = ' ' + Object.entries(el.dataAttrs).map(([k, v]) => `${k}="${v}"`).join(' ');
       }
-      return `[${el.ref}]${score}${fold}${zone}${sec} ${el.htmlSnippet}${dataStr}`;
+      return `[${el.ref}]${score}${fold}${zone}${sec}${form}${sibs}${desc} ${el.htmlSnippet}${dataStr}`;
     }
 
-    // Fallback for candidates that don't carry htmlSnippet (older content scripts)
+    // Fallback for candidates that don't carry htmlSnippet
     const parts = [`[${el.ref}] <${el.tag}>`];
     if (el.role && el.role !== el.tag) parts.push(`role="${el.role}"`);
     if (el.type)                       parts.push(`type="${el.type}"`);
@@ -215,7 +218,7 @@ export async function identifyElement(apiKey, hint, candidates, { pageUrl = '', 
     if (el.name)                       parts.push(`name:"${el.name}"`);
     if (el.id)                         parts.push(`id:"${el.id}"`);
     if (el.href)                       parts.push(`href:"${el.href.slice(0, 60)}"`);
-    return parts.join(' ') + score + fold + zone + sec;
+    return parts.join(' ') + score + fold + zone + sec + form + sibs + desc;
   }).join('\n');
 
   const targetLabel = stepMeta?.targetLabel?.trim();

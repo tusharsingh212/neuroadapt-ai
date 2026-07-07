@@ -120,3 +120,10 @@ sidepanelBtn.addEventListener('click', async () => {
   if (tab?.id) chrome.sidePanel.open({ tabId: tab.id });
 });
 
+// ── Developer debug panel (Alt+Shift+D) ───────────────────────────────────
+document.addEventListener('keydown', (e) => {
+  if (e.altKey && e.shiftKey && e.key === 'D') {
+    chrome.tabs.create({ url: chrome.runtime.getURL('debug-panel.html') });
+  }
+});
+
