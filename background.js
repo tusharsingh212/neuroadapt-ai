@@ -29,6 +29,7 @@
 
 import { getStepExplanation, identifyElement, generateSteps, validateSelection, testApiKey, isSimpleStepExplanation } from './engine/llm.js';
 import { GEMINI_API_KEY } from './config.js';
+import { matchWorkflow } from './workflows/registry.js';
 
 console.log('[NeuroAdapt] Background service worker v3 started.');
 
@@ -61,6 +62,7 @@ const DEFAULT_STATE = Object.freeze({
   frameId:          null,
   llmExplanation:   null,
   fallbackPrompt:   null,
+  workflowId:       null, // matched workflow registry id, or null for LLM-generated
   lastUpdated:      0,
 });
 
@@ -113,8 +115,10 @@ function transition(action, payload = {}) {
         currentStepIndex: 0,
         status:           'navigating',
         tabId:            payload.tabId,
+        workflowId:       payload.workflowId ?? null,
         lastUpdated:      Date.now(),
       };
+      startEvalSession(payload.goal);
       break;
 
     case 'STEP_FOUND':
@@ -143,6 +147,7 @@ function transition(action, payload = {}) {
       } else {
         STATE = { ...STATE, status: 'complete', lastUpdated: Date.now() };
         console.log('[NeuroAdapt] All steps complete.');
+        flushEvalSession(true);
       }
       break;
 
@@ -171,11 +176,13 @@ function transition(action, payload = {}) {
 
     case 'CANCEL':
     case 'RESET':
+      if (STATE.status !== 'idle') flushEvalSession(false);
       STATE = { ...DEFAULT_STATE, lastUpdated: Date.now() };
       break;
 
     case 'ERROR':
       STATE = { ...STATE, status: 'error', lastUpdated: Date.now() };
+      flushEvalSession(false);
       break;
 
     default:
@@ -213,6 +220,79 @@ function getApiKey() {
     return '';
   }
   return key;
+}
+
+// ── Evaluation store ─────────────────────────────────────────────────────────
+// Per-task metrics accumulated in memory and flushed to chrome.storage.local
+// when a task completes. Readable by the debug panel.
+
+let _evalSession = {
+  goal:              null,
+  startTs:           0,
+  steps:             [],   // per-step detail records
+  llmCalls:          0,
+  verificationPassed: 0,
+  verificationTotal:  0,
+  recoveryUsed:       0,
+};
+
+function startEvalSession(goal) {
+  _evalSession = {
+    goal,
+    startTs:            Date.now(),
+    steps:              [],
+    llmCalls:           0,
+    verificationPassed: 0,
+    verificationTotal:  0,
+    recoveryUsed:       0,
+  };
+}
+
+function recordVerification(verified, signals) {
+  _evalSession.verificationTotal++;
+  if (verified) _evalSession.verificationPassed++;
+  // Annotate the current step record with verification result
+  const idx = STATE.currentStepIndex;
+  if (idx != null && _evalSession.steps[idx]) {
+    _evalSession.steps[idx].verified = verified;
+    _evalSession.steps[idx].signals  = signals ?? [];
+  }
+}
+
+function recordStepMetrics(stepIndex, stepLabel, metrics) {
+  _evalSession.steps[stepIndex] = {
+    label:      stepLabel,
+    ts:         Date.now(),
+    topScore:   metrics?.topScore   ?? 0,
+    source:     metrics?.source     ?? 'unknown',
+    pruneMs:    metrics?.pruneMs    ?? null,
+    rankMs:     metrics?.rankMs     ?? null,
+    llmMs:      metrics?.llmMs      ?? null,
+    totalMs:    metrics?.totalMs    ?? 0,
+    confident:  metrics?.confident  ?? false,
+    verified:   metrics?.verified   ?? null,
+    signals:    metrics?.signals    ?? [],
+  };
+  if (metrics?.source === 'llm') _evalSession.llmCalls++;
+  if (metrics?.recoveryUsed)     _evalSession.recoveryUsed++;
+}
+
+async function flushEvalSession(success) {
+  const record = {
+    ..._evalSession,
+    endTs:   Date.now(),
+    success,
+    durationMs: Date.now() - _evalSession.startTs,
+  };
+  try {
+    const { naEvalHistory = [] } = await chrome.storage.local.get('naEvalHistory');
+    naEvalHistory.unshift(record);
+    // Keep last 50 sessions
+    await chrome.storage.local.set({ naEvalHistory: naEvalHistory.slice(0, 50) });
+    console.log('[NeuroAdapt] Eval session flushed. Duration:', record.durationMs, 'ms');
+  } catch (err) {
+    console.warn('[NeuroAdapt] flushEvalSession failed:', err.message);
+  }
 }
 
 // ── Step object helpers ───────────────────────────────────────────────────────
@@ -520,7 +600,42 @@ async function executeCurrentStep() {
         .catch(() => {});
     }
 
+    // ── Phase 6: Recovery chain (ordered, before HITL) ───────────────────────
+    // 1. Re-rank with alternative hint phrasings (no new LLM call)
+    // 2. Wait 600ms + fresh re-rank (handles slow-loading dynamic pages)
+    // 3. Only then HITL
+    if (result.topScore < MIN_CONFIDENCE && result.source !== 'llm') {
+      const alts = (enrichedMeta?.alternatives ?? []).filter(
+        (a) => a?.trim() && a.trim().toLowerCase() !== primaryHint.toLowerCase()
+      );
+      for (const alt of alts.slice(0, 3)) {
+        if (result.topScore >= MIN_CONFIDENCE) break;
+        console.log(`[NeuroAdapt] Recovery: re-ranking with alternative hint "${alt}"`);
+        const altResult = await rankAcrossFrames(tabId, alt.trim(), step, enrichedMeta).catch(() => null);
+        if (altResult && altResult.topScore > result.topScore) result = altResult;
+      }
+    }
+
+    if (result.topScore < MIN_CONFIDENCE) {
+      console.log('[NeuroAdapt] Recovery: waiting 600ms for dynamic page to settle, then re-ranking…');
+      await new Promise((r) => setTimeout(r, 600));
+      if (STATE.status !== 'navigating') return; // state changed while waiting
+      const freshResult = await rankAcrossFrames(tabId, primaryHint, step, enrichedMeta).catch(() => null);
+      if (freshResult && freshResult.topScore > result.topScore) result = freshResult;
+    }
+
+    recordStepMetrics(currentStepIndex, step, {
+      topScore:  result.topScore,
+      source:    result.source,
+      pruneMs:   result.metrics?.pruneMs != null ? +result.metrics.pruneMs : null,
+      rankMs:    result.metrics?.rankMs  != null ? +result.metrics.rankMs  : null,
+      llmMs:     result.metrics?.llmMs   != null ? +result.metrics.llmMs   : null,
+      totalMs:   result.metrics?.totalMs != null ? +result.metrics.totalMs : null,
+      confident: result.confident ?? (result.topScore >= MIN_CONFIDENCE),
+    });
+
     if (result.topScore >= MIN_CONFIDENCE) {
+      console.log(`[NeuroAdapt] Recovery succeeded — score=${result.topScore} label="${result.topLabel ?? '—'}"`);
       transition('STEP_FOUND', {
         topRef:   result.topRef,
         topScore: result.topScore,
@@ -554,7 +669,7 @@ async function executeCurrentStep() {
                  `Please click it for me and I'll continue from there.`;
       }
 
-      console.log(`[NeuroAdapt] Low confidence (${score}/100, source=${source}) — triggering HITL.`);
+      console.log(`[NeuroAdapt] Low confidence (${score}/100, source=${source}) after recovery — triggering HITL.`);
       transition('REQUIRE_HITL', { prompt });
       attachHITLCapture(tabId, step);
     }
@@ -597,7 +712,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
       // ── State query ────────────────────────────────────────────────────
       case 'NA_GET_STATE':
-        sendResponse({ ok: true, state: { ...STATE } });
+        sendResponse({ ok: true, state: {
+          ...STATE,
+          llmCalls:           _evalSession.llmCalls,
+          verificationPassed: _evalSession.verificationPassed,
+          verificationTotal:  _evalSession.verificationTotal,
+          recoveryUsed:       _evalSession.recoveryUsed > 0,
+          startTs:            _evalSession.startTs || null,
+        } });
         break;
 
       // ── User submits a goal ────────────────────────────────────────────
@@ -645,10 +767,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         dbg('SET_GOAL', { goal, tabId, pageUrl, pageTitle, pageContext });
 
+        // ── Workflow registry lookup (Phase 2) ────────────────────────────
+        // Use a pre-defined workflow if the goal matches a known task.
+        // This eliminates the LLM step-generation call entirely for supported
+        // workflows, giving faster, more consistent results.
+        const matchedWorkflow = matchWorkflow(goal);
+        if (matchedWorkflow) {
+          console.log(`[NeuroAdapt] Matched workflow: "${matchedWorkflow.name}" (id=${matchedWorkflow.id})`);
+        }
+
         const rawSteps = Array.isArray(message.steps) && message.steps.length
-          ? message.steps
-          : (await generateSteps(getApiKey(), goal, { pageUrl, pageTitle, pageContext }))
-            ?? generateStepsHeuristic(goal);
+          ? message.steps                                   // caller-supplied steps
+          : matchedWorkflow?.steps                          // registry match (no LLM call)
+            ?? (await generateSteps(getApiKey(), goal, { pageUrl, pageTitle, pageContext }))
+            ?? generateStepsHeuristic(goal);                // heuristic fallback
 
         const stepsMetadata = toStepObjects(rawSteps);
         const steps         = stepsMetadata.map((s) => s.hint);
@@ -657,7 +789,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         steps.forEach((s, i) => console.log(`  ${i + 1}. ${s}`));
 
         _autoRetryCount = 0; // reset retry counter for fresh goal
-        transition('SET_GOAL', { goal, steps, stepsMetadata, tabId });
+        transition('SET_GOAL', { goal, steps, stepsMetadata, tabId, workflowId: matchedWorkflow?.id ?? null });
         sendResponse({ ok: true, steps });
         await executeCurrentStep();
         break;
@@ -719,13 +851,85 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // ── User clicked the highlighted element (Phase 5 verification) ────
       case 'NA_ELEMENT_CLICKED': {
         if (STATE.status === 'navigating') {
-          console.log('[NeuroAdapt] User clicked highlighted element — advancing step.');
+          console.log('[NeuroAdapt] User clicked highlighted element — running verification.');
           clearTimeout(_treeUpdateTimer);
-          _executing = false; // release lock if a rank was in flight
-          _autoRetryCount = 0; // reset retry counter for new step
-          transition('ADVANCE_STEP');
-          // Small delay to let the page respond to the click before re-ranking
-          setTimeout(() => executeCurrentStep(), 600);
+          _executing    = false;
+          _autoRetryCount = 0;
+
+          const preSnapshot    = message.preSnapshot ?? null;
+          const clickedStepMeta = message.stepMeta ?? null;
+          const tabId          = STATE.tabId;
+
+          // ── Verification Engine ─────────────────────────────────────────
+          // Ask the content script to watch for expected outcomes.
+          // We do NOT advance the step until verification reports back.
+          // If the tab is unreachable we fall back to the old direct-advance.
+          (async () => {
+            let signals  = [];
+            let verified = false;
+
+            if (preSnapshot && tabId) {
+              try {
+                const vResult = await chrome.tabs.sendMessage(
+                  tabId,
+                  { type: 'NA_VERIFY_STEP', preSnapshot, stepMeta: clickedStepMeta },
+                  { frameId: 0 }
+                ).catch(() => null);
+
+                if (vResult) {
+                  verified = vResult.verified;
+                  signals  = vResult.signals ?? [];
+                }
+              } catch { /* verification unavailable — advance anyway */ }
+            }
+
+            console.log(
+              `[NeuroAdapt] Verification ${verified ? 'PASSED' : 'no-change'} ` +
+              `signals=[${signals.join(',')}]`
+            );
+            recordVerification(verified, signals);
+
+            // If an explicit form error was detected, pause and tell the user
+            if (signals.includes('error-detected')) {
+              console.warn('[NeuroAdapt] Page error detected — holding on current step.');
+              transition('REQUIRE_HITL', {
+                prompt:
+                  'It looks like there was a validation error on the page. ' +
+                  'Please correct it, then click the element again.',
+              });
+              return;
+            }
+
+            if (verified) {
+              transition('ADVANCE_STEP');
+              setTimeout(() => executeCurrentStep(), 300);
+              return;
+            }
+
+            // No clear verification signals — run a brief recovery re-rank before advancing.
+            // If the page now shows a high-confidence match for the SAME step (element still
+            // present, click may not have registered), re-highlight rather than blindly advancing.
+            await new Promise((r) => setTimeout(r, 400));
+            if (STATE.status !== 'navigating') return;
+            const recStep = STATE.stepsList[STATE.currentStepIndex];
+            const recMeta = STATE.stepsMetadata?.[STATE.currentStepIndex] ?? null;
+            const recHint = recMeta?.targetLabel?.trim() || recStep;
+            const recResult = await rankAcrossFrames(STATE.tabId, recHint, recStep, recMeta).catch(() => null);
+            if (recResult?.topScore >= MIN_CONFIDENCE) {
+              // Re-highlight — the click may not have worked; give user another chance
+              console.log(`[NeuroAdapt] Recovery re-rank: score=${recResult.topScore} — re-highlighting.`);
+              transition('STEP_FOUND', {
+                topRef:   recResult.topRef,
+                topScore: recResult.topScore,
+                topLabel: recResult.topLabel,
+                frameId:  recResult.frameId,
+              });
+            } else {
+              // Could not find a confident match — the click probably worked
+              transition('ADVANCE_STEP');
+              executeCurrentStep();
+            }
+          })();
         }
         sendResponse({ ok: true });
         break;
@@ -801,6 +1005,19 @@ chrome.webNavigation.onCompleted.addListener(({ tabId, frameId }) => {
     `re-executing step in ${POST_NAV_DELAY_MS}ms.`
   );
   setTimeout(() => executeCurrentStep(), POST_NAV_DELAY_MS);
+});
+
+// ── Tab lifecycle safety ──────────────────────────────────────────────────────
+// If the active navigation tab is closed, reset state so it doesn't stay stuck.
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (STATE.tabId === tabId && STATE.status !== 'idle') {
+    console.log(`[NeuroAdapt] Active tab ${tabId} closed — resetting state.`);
+    flushEvalSession(false);
+    STATE = { ...DEFAULT_STATE, lastUpdated: Date.now() };
+    broadcastState();
+    persistState();
+  }
 });
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
