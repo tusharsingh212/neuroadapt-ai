@@ -14,11 +14,35 @@
       <div class="na-panel__status-dot" id="na-panel-status-dot" data-status="idle"></div>
     </header>
 
-    <!-- Current step indicator -->
-    <section class="na-panel__step-card" id="na-step-card">
-      <p class="na-panel__step-label">Current Step</p>
-      <p class="na-panel__step-text" id="na-step-text">No active navigation.</p>
+    <!-- Current goal banner (shown while a task is active) -->
+    <section class="na-panel__goal-card" id="na-goal-card" hidden>
+      <p class="na-panel__goal-label">Current Goal</p>
+      <p class="na-panel__goal-text" id="na-goal-text"></p>
     </section>
+
+    <!-- Step guidance card -->
+    <section class="na-panel__step-card" id="na-step-card">
+      <p class="na-panel__step-label" id="na-step-progress">Current Step</p>
+      <p class="na-panel__step-text" id="na-step-text">No active navigation.</p>
+
+      <!-- Structured guidance (populated from workflow metadata) -->
+      <div id="na-guidance" hidden>
+        <div class="na-guidance__instruction" id="na-guidance-instruction"></div>
+        <div class="na-guidance__why" id="na-guidance-why" hidden>
+          <span class="na-guidance__why-label">Why?</span>
+          <span id="na-guidance-why-text"></span>
+        </div>
+        <div class="na-guidance__next" id="na-guidance-next" hidden>
+          <span class="na-guidance__next-label">After this</span>
+          <span id="na-guidance-next-text"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Highlight Again button (only shown when step is active) -->
+    <button id="na-highlight-again-btn" class="na-panel__btn na-panel__btn--ghost" hidden>
+      ↺ Highlight Again
+    </button>
 
     <!-- Progress checklist -->
     <section class="na-panel__progress" id="na-progress-section">
@@ -28,12 +52,12 @@
       </ol>
     </section>
 
-    <!-- LLM explanation bubble (Phase 5) -->
+    <!-- LLM explanation bubble (shown for non-workflow steps) -->
     <section class="na-panel__explanation" id="na-explanation-section" hidden>
       <div class="na-panel__bubble" id="na-explanation-bubble"></div>
     </section>
 
-    <!-- Human-in-the-loop fallback (Phase 5) -->
+    <!-- Human-in-the-loop fallback -->
     <section class="na-panel__fallback" id="na-panel-fallback" hidden>
       <div class="na-panel__fallback-banner">
         <span class="na-panel__fallback-icon" aria-hidden="true">⚠️</span>
@@ -57,8 +81,6 @@
         Start
       </button>
     </section>
-
-
   </div>
 
   <script src="sidepanel.js"></script>

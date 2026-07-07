@@ -1,22 +1,32 @@
 /**
- * NeuroAdapt AI — Side Panel Script (Phase 4)
- * Full copilot view: step list, live status, HITL fallback banner,
- * LLM explanation bubble (Phase 5 fills this in).
+ * NeuroAdapt AI — Side Panel Script (Phase 4.1)
+ * Renders structured step guidance from workflow metadata when available,
+ * falls back to LLM explanation for non-workflow steps.
  */
 
 console.log('[NeuroAdapt] Side panel opened.');
 
 // ── DOM refs ──────────────────────────────────────────────────────────────
-const statusDot      = document.getElementById('na-panel-status-dot');
-const stepText       = document.getElementById('na-step-text');
-const stepsListEl    = document.getElementById('na-steps-list');
-const explanationSec = document.getElementById('na-explanation-section');
-const explanationBub = document.getElementById('na-explanation-bubble');
-const fallbackSec    = document.getElementById('na-panel-fallback');
-const fallbackMsgEl  = document.getElementById('na-panel-fallback-msg');
-const cancelBtn      = document.getElementById('na-panel-cancel-btn');
-const goalInput      = document.getElementById('na-panel-goal');
-const startBtn       = document.getElementById('na-panel-start-btn');
+const statusDot         = document.getElementById('na-panel-status-dot');
+const goalCard          = document.getElementById('na-goal-card');
+const goalText          = document.getElementById('na-goal-text');
+const stepProgress      = document.getElementById('na-step-progress');
+const stepText          = document.getElementById('na-step-text');
+const guidanceEl        = document.getElementById('na-guidance');
+const guidanceInstr     = document.getElementById('na-guidance-instruction');
+const guidanceWhy       = document.getElementById('na-guidance-why');
+const guidanceWhyText   = document.getElementById('na-guidance-why-text');
+const guidanceNext      = document.getElementById('na-guidance-next');
+const guidanceNextText  = document.getElementById('na-guidance-next-text');
+const highlightAgainBtn = document.getElementById('na-highlight-again-btn');
+const stepsListEl       = document.getElementById('na-steps-list');
+const explanationSec    = document.getElementById('na-explanation-section');
+const explanationBub    = document.getElementById('na-explanation-bubble');
+const fallbackSec       = document.getElementById('na-panel-fallback');
+const fallbackMsgEl     = document.getElementById('na-panel-fallback-msg');
+const cancelBtn         = document.getElementById('na-panel-cancel-btn');
+const goalInput         = document.getElementById('na-panel-goal');
+const startBtn          = document.getElementById('na-panel-start-btn');
 
 // ── Status label map ──────────────────────────────────────────────────────
 const STATUS_LABELS = {
@@ -46,44 +56,89 @@ function renderSteps(steps, currentIndex) {
 function renderState(state) {
   const {
     status,
+    userGoal,
     stepsList,
+    stepsMetadata,
     currentStepIndex,
     topScore,
     topLabel,
     llmExplanation,
+    stepGuidance,
     fallbackPrompt,
   } = state;
+
+  const idx     = currentStepIndex ?? 0;
+  const isActive = status === 'navigating' || status === 'waiting_for_human';
 
   // Status dot
   statusDot.dataset.status = status;
 
-  // Current step text
-  const idx = currentStepIndex ?? 0;
-  if (stepsList?.length) {
-    stepText.textContent = status === 'complete'
-      ? 'All steps completed!'
-      : `Step ${idx + 1} / ${stepsList.length}: ${stepsList[idx]}`;
+  // Goal banner
+  if (userGoal && isActive) {
+    goalText.textContent = userGoal;
+    goalCard.hidden = false;
   } else {
+    goalCard.hidden = true;
+  }
+
+  // Step progress label and main text
+  if (stepsList?.length && isActive) {
+    const total = stepsList.length;
+    const meta  = stepsMetadata?.[idx];
+    stepProgress.textContent = `Step ${idx + 1} of ${total}`;
+    // Title line: prefer structured title, else fall back to step label
+    stepText.textContent = meta?.title || stepsList[idx] || '';
+  } else if (status === 'complete') {
+    stepProgress.textContent = 'Done';
+    stepText.textContent = 'All steps completed!';
+  } else {
+    stepProgress.textContent = 'Current Step';
     stepText.textContent = STATUS_LABELS[status] ?? status;
   }
 
+  // Structured guidance (workflow steps)
+  if (stepGuidance?.instruction && isActive) {
+    guidanceInstr.textContent = stepGuidance.instruction;
+
+    if (stepGuidance.reason) {
+      guidanceWhyText.textContent = stepGuidance.reason;
+      guidanceWhy.hidden = false;
+    } else {
+      guidanceWhy.hidden = true;
+    }
+
+    if (stepGuidance.nextHint) {
+      guidanceNextText.textContent = stepGuidance.nextHint;
+      guidanceNext.hidden = false;
+    } else {
+      guidanceNext.hidden = true;
+    }
+
+    guidanceEl.hidden = false;
+    explanationSec.hidden = true; // suppress LLM bubble when structured guidance is shown
+  } else {
+    guidanceEl.hidden = true;
+
+    // LLM explanation bubble (fallback for non-workflow steps)
+    if (llmExplanation) {
+      explanationBub.textContent = llmExplanation;
+      explanationSec.hidden = false;
+    } else if (topLabel && isActive) {
+      explanationBub.textContent =
+        topScore >= 70
+          ? `Found "${topLabel}" — ready for you to click.`
+          : `Best match: "${topLabel}".`;
+      explanationSec.hidden = false;
+    } else {
+      explanationSec.hidden = true;
+    }
+  }
+
+  // Highlight Again button (only while a step is actively being navigated)
+  highlightAgainBtn.hidden = !(isActive && stepsList?.length);
+
   // Step list
   renderSteps(stepsList, idx);
-
-  // LLM explanation bubble (Phase 5 populates this)
-  if (llmExplanation) {
-    explanationBub.textContent = llmExplanation;
-    explanationSec.hidden = false;
-  } else if (topLabel && status === 'navigating') {
-    // Fallback micro-explanation from the ranker result
-    explanationBub.textContent =
-      topScore >= 70
-        ? `Found "${topLabel}" with high confidence (${topScore}/100).`
-        : `Best match: "${topLabel}" — score ${topScore}/100.`;
-    explanationSec.hidden = false;
-  } else {
-    explanationSec.hidden = true;
-  }
 
   // HITL fallback banner
   if (status === 'waiting_for_human') {
@@ -93,14 +148,14 @@ function renderState(state) {
     fallbackSec.hidden = true;
   }
 
-  // Start button label adapts to state
+  // Start button adapts to state
   if (status === 'navigating') {
     startBtn.textContent = 'Next Step →';
     startBtn.disabled    = false;
     goalInput.disabled   = true;
   } else if (status === 'waiting_for_human') {
     startBtn.textContent = 'Waiting…';
-    startBtn.disabled    = true;   // prevent accidental goal restart during HITL
+    startBtn.disabled    = true;
     goalInput.disabled   = true;
   } else {
     startBtn.textContent = 'Start';
@@ -109,7 +164,11 @@ function renderState(state) {
   }
 }
 
+<<<<<<< HEAD
 // ── Local state mirror (avoids extra NA_GET_STATE round-trips) ────────────
+=======
+// ── Local state mirror ────────────────────────────────────────────────────
+>>>>>>> 5d80ee7cb4e0c8288b353ddaa9e8f5315739759c
 let _localState = { status: 'idle' };
 
 // ── On panel open: sync state from background ─────────────────────────────
@@ -134,7 +193,10 @@ startBtn.addEventListener('click', async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) { console.warn('[NeuroAdapt] No active tab.'); return; }
 
+<<<<<<< HEAD
   // Use in-memory state — no extra round-trip needed
+=======
+>>>>>>> 5d80ee7cb4e0c8288b353ddaa9e8f5315739759c
   if (_localState.status === 'navigating') {
     chrome.runtime.sendMessage({ type: 'NA_NEXT_STEP' });
     return;
@@ -161,3 +223,7 @@ cancelBtn.addEventListener('click', () => {
   chrome.runtime.sendMessage({ type: 'NA_CANCEL' });
 });
 
+// ── Highlight Again button ────────────────────────────────────────────────
+highlightAgainBtn.addEventListener('click', () => {
+  chrome.runtime.sendMessage({ type: 'NA_HIGHLIGHT_AGAIN' });
+});

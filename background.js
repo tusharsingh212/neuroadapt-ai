@@ -61,6 +61,7 @@ const DEFAULT_STATE = Object.freeze({
   topLabel:         null,
   frameId:          null,
   llmExplanation:   null,
+  stepGuidance:     null, // { title, instruction, reason, nextHint } from workflow metadata
   fallbackPrompt:   null,
   workflowId:       null, // matched workflow registry id, or null for LLM-generated
   lastUpdated:      0,
@@ -138,14 +139,16 @@ function transition(action, payload = {}) {
         STATE = {
           ...STATE,
           currentStepIndex: STATE.currentStepIndex + 1,
-          topRef:      null,
-          topScore:    0,
-          topLabel:    null,
-          status:      'navigating',
-          lastUpdated: Date.now(),
+          topRef:        null,
+          topScore:      0,
+          topLabel:      null,
+          llmExplanation: null,
+          stepGuidance:  null,
+          status:        'navigating',
+          lastUpdated:   Date.now(),
         };
       } else {
-        STATE = { ...STATE, status: 'complete', lastUpdated: Date.now() };
+        STATE = { ...STATE, status: 'complete', stepGuidance: null, lastUpdated: Date.now() };
         console.log('[NeuroAdapt] All steps complete.');
         flushEvalSession(true);
       }
@@ -172,6 +175,10 @@ function transition(action, payload = {}) {
 
     case 'SET_EXPLANATION':
       STATE = { ...STATE, llmExplanation: payload.explanation, lastUpdated: Date.now() };
+      break;
+
+    case 'SET_GUIDANCE':
+      STATE = { ...STATE, stepGuidance: payload, lastUpdated: Date.now() };
       break;
 
     case 'CANCEL':
@@ -576,9 +583,28 @@ async function executeCurrentStep() {
       alternatives: (stepMeta.alternatives ?? []).filter(Boolean),
     } : null;
 
+    // ── Proactive guidance (Phase 4.1) ────────────────────────────────────────
+    // If the step has structured guidance fields, publish them immediately so
+    // the side panel shows what to do before the element is even found.
+    // This also suppresses the Gemini explanation call for known-workflow steps.
+    const hasStructuredGuidance = !!(stepMeta?.instruction);
+    if (hasStructuredGuidance) {
+      const nextMeta = stepsMetadata?.[currentStepIndex + 1] ?? null;
+      transition('SET_GUIDANCE', {
+        title:       stepMeta.title       ?? null,
+        instruction: stepMeta.instruction,
+        reason:      stepMeta.reason      ?? null,
+        nextHint:    stepMeta.nextHint    ?? (nextMeta?.title ?? null),
+      });
+    }
+
+    // Badge tooltip: use the step's instruction (short form) if available,
+    // otherwise fall back to the hint string.
+    const badgeTooltip = stepMeta?.instruction?.replace(/^(Click|Tap|Type|Enter|Choose|Select)\s*/i, '') || step;
+
     let result;
     try {
-      result = await rankAcrossFrames(tabId, primaryHint, step, enrichedMeta);
+      result = await rankAcrossFrames(tabId, primaryHint, badgeTooltip, enrichedMeta);
     } catch (err) {
       console.error('[NeuroAdapt] rankAcrossFrames threw:', err);
       transition('ERROR');
@@ -587,6 +613,7 @@ async function executeCurrentStep() {
 
     dbg('STEP_TIMING', { elapsedMs: (performance.now() - t0).toFixed(1), step });
 
+<<<<<<< HEAD
     // Fire LLM explanation non-blocking.
     // Skip the Gemini call for short/simple steps — rule-based text is just
     // as informative and avoids burning quota on "Click Sign In" steps.
@@ -598,6 +625,20 @@ async function executeCurrentStep() {
       getStepExplanation(getApiKey(), userGoal, step)
         .then((explanation) => transition('SET_EXPLANATION', { explanation }))
         .catch(() => {});
+=======
+    // Fire LLM explanation non-blocking — skip for workflow steps that already
+    // have structured guidance (avoids burning quota unnecessarily).
+    if (!hasStructuredGuidance) {
+      if (isSimpleStepExplanation(step)) {
+        getStepExplanation('', userGoal, step)   // empty key → returns ruleFallback instantly
+          .then((explanation) => transition('SET_EXPLANATION', { explanation }))
+          .catch(() => {});
+      } else {
+        getStepExplanation(getApiKey(), userGoal, step)
+          .then((explanation) => transition('SET_EXPLANATION', { explanation }))
+          .catch(() => {});
+      }
+>>>>>>> 5d80ee7cb4e0c8288b353ddaa9e8f5315739759c
     }
 
     // ── Phase 6: Recovery chain (ordered, before HITL) ───────────────────────
@@ -801,6 +842,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         _autoRetryCount = 0; // reset retry counter for new step
         transition('ADVANCE_STEP');
         sendResponse({ ok: true, state: { ...STATE } });
+        await executeCurrentStep();
+        break;
+
+      // ── Highlight current step again (re-locate + re-highlight) ───────
+      case 'NA_HIGHLIGHT_AGAIN':
+        if (STATE.status !== 'navigating' && STATE.status !== 'waiting_for_human') {
+          sendResponse({ ok: false, error: 'No active step.' }); break;
+        }
+        // Re-set navigating (in case we were in waiting_for_human), then re-run
+        if (STATE.status === 'waiting_for_human') transition('HITL_RESOLVED');
+        _executing = false; // release any stale lock
+        sendResponse({ ok: true });
         await executeCurrentStep();
         break;
 
