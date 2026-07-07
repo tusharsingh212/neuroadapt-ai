@@ -93,9 +93,11 @@ window.NeuroAdaptEngine = window.NeuroAdaptEngine || {};
 
       this._placeBadge(badge, element);
 
-      // Re-position on resize
+      // Re-position when the element itself moves (e.g. sticky headers, scroll).
+      // Observing the element directly is far cheaper than observing the entire
+      // document root, which fires on every window resize.
       this._resizeObs = new ResizeObserver(() => this._placeBadge(badge, element));
-      this._resizeObs.observe(document.documentElement);
+      this._resizeObs.observe(element);
 
       // Auto-fade after 4 s so it doesn't linger
       this._fadeTimer = setTimeout(() => {

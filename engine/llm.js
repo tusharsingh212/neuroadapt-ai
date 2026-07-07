@@ -511,3 +511,17 @@ function ruleFallback(userGoal, currentStep) {
     return `Almost there — finding the final ${currentStep.toLowerCase()} button`;
   return `Working on step: "${currentStep}"`;
 }
+
+/**
+ * Returns true when a step is a simple, well-known action where the rule-based
+ * explanation is equally good as a Gemini response. Avoids spending an LLM call
+ * on trivial steps like "Click Sign In" or "Enter your email".
+ */
+export function isSimpleStepExplanation(step) {
+  if (!step || step.length < 6) return true;
+  const s = step.toLowerCase();
+  return (
+    s.length <= 40 ||
+    /^(click|press|tap|enter|type|fill|submit|find|search|sign|log|open|go to|navigate|select)\b/.test(s)
+  );
+}
