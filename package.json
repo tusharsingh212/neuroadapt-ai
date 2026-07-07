@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "description": "Accessibility assistant and web navigation copilot — Chrome Extension MV3",
   "scripts": {
+    "generate-config": "node scripts/generate-config.js",
     "serve": "npx serve . -l 5173 --no-clipboard"
   },
   "devDependencies": {}
